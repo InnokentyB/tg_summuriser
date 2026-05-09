@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tg_summariser.models import Channel
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
 from tg_summariser.services.telegram_client import TelegramUserClient
 
@@ -19,19 +20,35 @@ class IngestionService:
 
         ingested = 0
         for channel in channels:
-            posts = await self.tg_client.iter_recent_channel_posts(
-                channel.telegram_username or channel.telegram_chat_id,
-                limit=limit_per_channel,
+            ingested += await self.sync_channel(session, channel, limit=limit_per_channel, post_repo=post_repo)
+        return ingested
+
+    async def sync_channel(
+        self,
+        session: AsyncSession,
+        channel: Channel,
+        limit: int = 15,
+        post_repo: PostRepository | None = None,
+    ) -> int:
+        if not self.tg_client.is_connected():
+            return 0
+
+        repo = post_repo or PostRepository(session)
+        posts = await self.tg_client.iter_recent_channel_posts(
+            channel.telegram_username or channel.telegram_chat_id,
+            limit=limit,
+        )
+
+        ingested = 0
+        for item in posts:
+            normalized = " ".join(item.text.split())
+            _, created = await repo.create_post(
+                channel_id=channel.id,
+                telegram_message_id=item.message_id,
+                raw_text=item.text,
+                normalized_text=normalized,
+                original_link=item.link,
             )
-            for item in posts:
-                normalized = " ".join(item.text.split())
-                _, created = await post_repo.create_post(
-                    channel_id=channel.id,
-                    telegram_message_id=item.message_id,
-                    raw_text=item.text,
-                    normalized_text=normalized,
-                    original_link=item.link,
-                )
-                if created:
-                    ingested += 1
+            if created:
+                ingested += 1
         return ingested

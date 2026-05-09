@@ -51,3 +51,29 @@ async def test_ingestion_syncs_new_posts_only(db_session) -> None:
     assert second_sync == 0
     assert len(stored_posts) == 2
 
+
+async def test_ingestion_can_sync_single_channel(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=654,
+        title="Agents Weekly",
+        telegram_username="agentsweekly",
+        is_private=False,
+    )
+
+    posts = [
+        TelegramChannelPost(
+            channel_chat_id=654,
+            channel_title="Agents Weekly",
+            channel_username="agentsweekly",
+            message_id=10,
+            text="Agent systems are changing workflow automation",
+            link="https://t.me/agentsweekly/10",
+        )
+    ]
+
+    service = IngestionService(FakeTelegramClient(posts))
+    synced = await service.sync_channel(db_session, channel)
+    stored_posts = await PostRepository(db_session).pending_posts()
+
+    assert synced == 1
+    assert len(stored_posts) == 1

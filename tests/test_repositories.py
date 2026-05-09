@@ -65,3 +65,43 @@ async def test_top_candidates_preloads_channel(db_session) -> None:
     assert len(candidates) == 1
     assert "channel" not in inspect(candidates[0]).unloaded
     assert candidates[0].channel.title == "Knowledge Management"
+
+
+async def test_top_candidates_for_channel_limits_results_to_single_source(db_session) -> None:
+    first_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=111,
+        title="AI One",
+        telegram_username="ai_one",
+        is_private=False,
+    )
+    second_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=222,
+        title="AI Two",
+        telegram_username="ai_two",
+        is_private=False,
+    )
+
+    first_post, _ = await PostRepository(db_session).create_post(
+        channel_id=first_channel.id,
+        telegram_message_id=1,
+        raw_text="First",
+        normalized_text="First",
+        original_link="https://t.me/ai_one/1",
+    )
+    first_post.status = PostStatus.processed
+    first_post.relevance_score = 0.9
+
+    second_post, _ = await PostRepository(db_session).create_post(
+        channel_id=second_channel.id,
+        telegram_message_id=1,
+        raw_text="Second",
+        normalized_text="Second",
+        original_link="https://t.me/ai_two/1",
+    )
+    second_post.status = PostStatus.processed
+    second_post.relevance_score = 0.95
+
+    candidates = await PostRepository(db_session).top_candidates_for_channel(first_channel.id, limit=5)
+
+    assert len(candidates) == 1
+    assert candidates[0].id == first_post.id

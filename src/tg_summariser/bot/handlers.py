@@ -146,25 +146,65 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
 
     @router.message(F.forward_from_chat)
     async def add_forwarded_channel(message: Message) -> None:
+        if not message.from_user:
+            return
         async with session_scope() as session:
             repo = ChannelRepository(session)
+            user = await UserRepository(session).get_or_create(
+                message.from_user.id, message.from_user.username
+            )
             try:
-                result = await channel_service.add_from_forward(message, repo)
+                channel = await channel_service.add_from_forward(message, repo)
             except ValueError as exc:
                 await message.answer(str(exc))
                 return
-        await message.answer(result)
+            synced = await ingestion_service.sync_channel(session, channel)
+            processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
+            processed = await processor.process_pending(session, user.id)
+            sent = await DigestService(message.bot).send_channel_welcome_digest(
+                session=session,
+                user_id=user.id,
+                telegram_id=message.from_user.id,
+                channel_id=channel.id,
+                channel_title=channel.title,
+            )
+        await message.answer(
+            f"Канал '{channel.title}' добавлен в отслеживание.\n"
+            f"Импортировано постов: {synced}\n"
+            f"Обработано AI: {processed}\n"
+            f"Отправлено в стартовое саммари: {sent}"
+        )
 
     @router.message(F.text.regexp(r"(https?://t\.me/|@)"))
     async def add_channel_by_text(message: Message) -> None:
+        if not message.from_user:
+            return
         async with session_scope() as session:
             repo = ChannelRepository(session)
+            user = await UserRepository(session).get_or_create(
+                message.from_user.id, message.from_user.username
+            )
             try:
-                result = await channel_service.add_from_text(message.text or "", repo)
+                channel = await channel_service.add_from_text(message.text or "", repo)
             except Exception as exc:
                 await message.answer(f"Не удалось добавить канал: {exc}")
                 return
-        await message.answer(result)
+            synced = await ingestion_service.sync_channel(session, channel)
+            processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
+            processed = await processor.process_pending(session, user.id)
+            sent = await DigestService(message.bot).send_channel_welcome_digest(
+                session=session,
+                user_id=user.id,
+                telegram_id=message.from_user.id,
+                channel_id=channel.id,
+                channel_title=channel.title,
+            )
+        await message.answer(
+            f"Канал '{channel.title}' добавлен в отслеживание.\n"
+            f"Импортировано постов: {synced}\n"
+            f"Обработано AI: {processed}\n"
+            f"Отправлено в стартовое саммари: {sent}"
+        )
 
     @router.callback_query(F.data.startswith("feedback:"))
     async def feedback_callback(callback: CallbackQuery) -> None:

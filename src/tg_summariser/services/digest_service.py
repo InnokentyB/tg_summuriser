@@ -16,11 +16,47 @@ class DigestService:
 
     async def send_digest(self, session, user_id: int, telegram_id: int) -> int:
         post_repo = PostRepository(session)
-        digest_repo = DigestRepository(session)
         posts = await post_repo.top_candidates(limit=5)
         if not posts:
             await self.bot.send_message(telegram_id, "Новых релевантных постов для дайджеста пока нет.")
             return 0
+
+        return await self.send_posts(
+            session=session,
+            user_id=user_id,
+            telegram_id=telegram_id,
+            posts=posts,
+        )
+
+    async def send_channel_welcome_digest(
+        self,
+        session,
+        user_id: int,
+        telegram_id: int,
+        channel_id: int,
+        channel_title: str,
+    ) -> int:
+        posts = await PostRepository(session).top_candidates_for_channel(channel_id=channel_id, limit=5)
+        if not posts:
+            await self.bot.send_message(
+                telegram_id,
+                f"Канал '{channel_title}' добавлен. Подходящих постов для стартового саммари пока не нашлось.",
+            )
+            return 0
+
+        await self.bot.send_message(
+            telegram_id,
+            f"Канал '{channel_title}' добавлен. Вот стартовое саммари по последним постам.",
+        )
+        return await self.send_posts(
+            session=session,
+            user_id=user_id,
+            telegram_id=telegram_id,
+            posts=posts,
+        )
+
+    async def send_posts(self, session, user_id: int, telegram_id: int, posts: list[Post]) -> int:
+        digest_repo = DigestRepository(session)
 
         digest = await digest_repo.create_digest(user_id=user_id, scheduled_for=datetime.utcnow())
         grouped: dict[str, list[Post]] = defaultdict(list)

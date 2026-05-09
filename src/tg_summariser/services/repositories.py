@@ -127,6 +127,20 @@ class PostRepository:
         )
         return list(result.scalars())
 
+    async def top_candidates_for_channel(self, channel_id: int, limit: int = 5) -> list[Post]:
+        result = await self.session.execute(
+            select(Post)
+            .options(selectinload(Post.channel))
+            .where(
+                Post.channel_id == channel_id,
+                Post.status != PostStatus.hidden,
+                Post.was_sent.is_(False),
+            )
+            .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars())
+
     async def hidden_posts(self, limit: int = 10) -> list[Post]:
         result = await self.session.execute(
             select(Post)
