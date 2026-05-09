@@ -24,5 +24,16 @@ class Settings(BaseSettings):
     def digest_times(self) -> list[str]:
         return [item.strip() for item in self.digest_schedules.split(",") if item.strip()]
 
+    @cached_property
+    def normalized_database_url(self) -> str:
+        url = self.database_url.strip()
+        if url.startswith("postgresql+asyncpg://"):
+            return url
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        return url
+
 
 settings = Settings()

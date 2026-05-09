@@ -15,8 +15,8 @@ def _ensure_sqlite_parent(url: str) -> None:
         Path(db_path[2:]).parent.mkdir(parents=True, exist_ok=True)
 
 
-_ensure_sqlite_parent(settings.database_url)
-engine = create_async_engine(settings.database_url, future=True)
+_ensure_sqlite_parent(settings.normalized_database_url)
+engine = create_async_engine(settings.normalized_database_url, future=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -31,4 +31,3 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
         raise
     finally:
         await session.close()
-

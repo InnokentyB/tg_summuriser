@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from tg_summariser.models import (
     Channel,
@@ -105,7 +106,9 @@ class PostRepository:
         return post, True
 
     async def get(self, post_id: int) -> Post | None:
-        result = await self.session.execute(select(Post).where(Post.id == post_id))
+        result = await self.session.execute(
+            select(Post).options(selectinload(Post.channel)).where(Post.id == post_id)
+        )
         return result.scalar_one_or_none()
 
     async def pending_posts(self) -> list[Post]:
@@ -117,6 +120,7 @@ class PostRepository:
     async def top_candidates(self, limit: int = 5) -> list[Post]:
         result = await self.session.execute(
             select(Post)
+            .options(selectinload(Post.channel))
             .where(Post.status != PostStatus.hidden, Post.was_sent.is_(False))
             .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
             .limit(limit)
@@ -126,6 +130,7 @@ class PostRepository:
     async def hidden_posts(self, limit: int = 10) -> list[Post]:
         result = await self.session.execute(
             select(Post)
+            .options(selectinload(Post.channel))
             .where(Post.status == PostStatus.hidden)
             .order_by(Post.created_at.desc())
             .limit(limit)
@@ -139,7 +144,7 @@ class PostRepository:
         channel: str | None = None,
         limit: int = 10,
     ) -> list[Post]:
-        stmt: Select[tuple[Post]] = select(Post).join(Channel)
+        stmt: Select[tuple[Post]] = select(Post).options(selectinload(Post.channel)).join(Channel)
         stmt = stmt.where(
             or_(
                 Post.raw_text.ilike(f"%{query}%"),
