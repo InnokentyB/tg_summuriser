@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy import Select, func, or_, select
@@ -16,6 +17,15 @@ from tg_summariser.models import (
     User,
     UserFeedback,
 )
+
+
+def normalize_telegram_chat_id(chat_id: int) -> int:
+    raw = str(chat_id)
+    if raw.startswith("-100"):
+        return int(raw[4:])
+    if raw.startswith("-"):
+        return int(raw[1:])
+    return chat_id
 
 
 class UserRepository:
@@ -47,11 +57,23 @@ class ChannelRepository:
         telegram_username: str | None,
         is_private: bool,
     ) -> Channel:
-        result = await self.session.execute(
-            select(Channel).where(Channel.telegram_chat_id == telegram_chat_id)
-        )
-        channel = result.scalar_one_or_none()
+        normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
+        channel = None
+
+        if telegram_username:
+            result = await self.session.execute(
+                select(Channel).where(Channel.telegram_username == telegram_username)
+            )
+            channel = result.scalar_one_or_none()
+
+        if channel is None:
+            result = await self.session.execute(
+                select(Channel).where(Channel.telegram_chat_id == normalized_chat_id)
+            )
+            channel = result.scalar_one_or_none()
+
         if channel:
+            channel.telegram_chat_id = normalized_chat_id
             channel.title = title
             channel.telegram_username = telegram_username
             channel.is_private = is_private
@@ -59,7 +81,7 @@ class ChannelRepository:
             return channel
 
         channel = Channel(
-            telegram_chat_id=telegram_chat_id,
+            telegram_chat_id=normalized_chat_id,
             title=title,
             telegram_username=telegram_username,
             is_private=is_private,
@@ -94,6 +116,12 @@ class PostRepository:
         if existing:
             return existing, False
 
+        if original_link:
+            result = await self.session.execute(select(Post).where(Post.original_link == original_link))
+            existing = result.scalar_one_or_none()
+            if existing:
+                return existing, False
+
         post = Post(
             channel_id=channel_id,
             telegram_message_id=telegram_message_id,
@@ -121,11 +149,12 @@ class PostRepository:
         result = await self.session.execute(
             select(Post)
             .options(selectinload(Post.channel))
-            .where(Post.status != PostStatus.hidden, Post.was_sent.is_(False))
+            .where(Post.status == PostStatus.processed, Post.was_sent.is_(False))
             .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-            .limit(limit)
+            .limit(limit * 5)
         )
-        return list(result.scalars())
+        sent_keys = await self._sent_source_keys()
+        return self._dedupe_posts(list(result.scalars()), limit, excluded_keys=sent_keys)
 
     async def top_candidates_for_channel(self, channel_id: int, limit: int = 5) -> list[Post]:
         result = await self.session.execute(
@@ -133,13 +162,14 @@ class PostRepository:
             .options(selectinload(Post.channel))
             .where(
                 Post.channel_id == channel_id,
-                Post.status != PostStatus.hidden,
+                Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
             )
             .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-            .limit(limit)
+            .limit(limit * 5)
         )
-        return list(result.scalars())
+        sent_keys = await self._sent_source_keys(channel_id=channel_id)
+        return self._dedupe_posts(list(result.scalars()), limit, excluded_keys=sent_keys)
 
     async def hidden_posts(self, limit: int = 10) -> list[Post]:
         result = await self.session.execute(
@@ -173,6 +203,37 @@ class PostRepository:
         stmt = stmt.order_by(Post.created_at.desc()).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars())
+
+    async def _sent_source_keys(self, channel_id: int | None = None) -> set[str]:
+        stmt = select(Post).where(Post.was_sent.is_(True))
+        if channel_id is not None:
+            stmt = stmt.where(Post.channel_id == channel_id)
+        result = await self.session.execute(stmt)
+        return {self._source_key(post) for post in result.scalars()}
+
+    def _dedupe_posts(
+        self,
+        posts: Iterable[Post],
+        limit: int,
+        excluded_keys: set[str] | None = None,
+    ) -> list[Post]:
+        unique_posts: list[Post] = []
+        seen_keys: set[str] = set(excluded_keys or set())
+        for post in posts:
+            key = self._source_key(post)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            unique_posts.append(post)
+            if len(unique_posts) >= limit:
+                break
+        return unique_posts
+
+    @staticmethod
+    def _source_key(post: Post) -> str:
+        if post.original_link:
+            return f"link:{post.original_link}"
+        return f"channel:{post.channel_id}:message:{post.telegram_message_id}"
 
 
 class FeedbackRepository:
