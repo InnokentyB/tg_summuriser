@@ -139,6 +139,19 @@ class PostRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_telegram_source(self, telegram_chat_id: int, telegram_message_id: int) -> Post | None:
+        normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
+        result = await self.session.execute(
+            select(Post)
+            .options(selectinload(Post.channel))
+            .join(Channel)
+            .where(
+                Channel.telegram_chat_id == normalized_chat_id,
+                Post.telegram_message_id == telegram_message_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def pending_posts(self) -> list[Post]:
         result = await self.session.execute(
             select(Post).where(Post.status == PostStatus.pending).order_by(Post.created_at.desc())

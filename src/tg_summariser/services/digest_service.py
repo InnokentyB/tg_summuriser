@@ -72,7 +72,7 @@ class DigestService:
                 await self.bot.send_message(
                     telegram_id,
                     self._render_post(post),
-                    reply_markup=feedback_keyboard(post.id),
+                    reply_markup=feedback_keyboard(post),
                     disable_web_page_preview=True,
                 )
                 rank += 1

@@ -93,7 +93,7 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
                 f"{post.summary or post.raw_text[:180]}\n"
                 f"Причина: {post.explanation or 'Без пояснения'}\n"
                 f"Ссылка: {post.original_link or 'Нет ссылки'}",
-                reply_markup=feedback_keyboard(post.id),
+                reply_markup=feedback_keyboard(post),
                 disable_web_page_preview=True,
             )
 
@@ -140,7 +140,7 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
                 f"Категория: {post.category or 'Без категории'}\n"
                 f"Источник: {post.channel.title}\n"
                 f"Ссылка: {post.original_link or 'Нет ссылки'}",
-                reply_markup=feedback_keyboard(post.id),
+                reply_markup=feedback_keyboard(post),
                 disable_web_page_preview=True,
             )
 
@@ -208,8 +208,7 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
 
     @router.callback_query(F.data.startswith("feedback:"))
     async def feedback_callback(callback: CallbackQuery) -> None:
-        _, post_id_str, value_str = (callback.data or "").split(":")
-        feedback_value = FeedbackValue(value_str)
+        parts = (callback.data or "").split(":")
         if not callback.from_user:
             await callback.answer("Не удалось определить пользователя.", show_alert=True)
             return
@@ -218,9 +217,23 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
             user = await UserRepository(session).get_or_create(
                 callback.from_user.id, callback.from_user.username
             )
-            post = await PostRepository(session).get(int(post_id_str))
+            repo = PostRepository(session)
+            post = None
+
+            if len(parts) == 4:
+                _, chat_id_str, message_id_str, value_str = parts
+                feedback_value = FeedbackValue(value_str)
+                post = await repo.get_by_telegram_source(int(chat_id_str), int(message_id_str))
+            elif len(parts) == 3:
+                _, post_id_str, value_str = parts
+                feedback_value = FeedbackValue(value_str)
+                post = await repo.get(int(post_id_str))
+            else:
+                await callback.answer("Некорректная кнопка.", show_alert=True)
+                return
+
             if not post:
-                await callback.answer("Пост не найден.", show_alert=True)
+                await callback.answer("Пост не найден в текущей базе. Пришлите новый дайджест.", show_alert=True)
                 return
             await FeedbackRepository(session).add_feedback(user.id, post.id, feedback_value)
             if feedback_value == FeedbackValue.not_interested:

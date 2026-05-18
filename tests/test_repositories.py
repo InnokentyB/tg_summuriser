@@ -121,6 +121,27 @@ async def test_create_post_dedupes_same_public_post_by_original_link(db_session)
     assert first_post.id == second_post.id
 
 
+async def test_get_by_telegram_source_finds_post_for_normalized_chat_id(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=-1001286689600,
+        title="AI Product",
+        telegram_username="ai_product",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2169,
+        raw_text="Codex import from Claude",
+        normalized_text="Codex import from Claude",
+        original_link="https://t.me/ai_product/2169",
+    )
+
+    found = await PostRepository(db_session).get_by_telegram_source(1286689600, 2169)
+
+    assert found is not None
+    assert found.id == post.id
+
+
 async def test_top_candidates_for_channel_limits_results_to_single_source(db_session) -> None:
     first_channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=111,
