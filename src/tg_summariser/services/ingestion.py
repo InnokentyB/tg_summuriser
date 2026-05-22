@@ -13,6 +13,8 @@ class IngestionService:
 
     async def sync_channels(self, session: AsyncSession, limit_per_channel: int = 15) -> int:
         if not self.tg_client.is_connected():
+            await self.tg_client.connect()
+        if not self.tg_client.is_connected():
             return 0
         channel_repo = ChannelRepository(session)
         post_repo = PostRepository(session)
@@ -30,6 +32,8 @@ class IngestionService:
         limit: int = 15,
         post_repo: PostRepository | None = None,
     ) -> int:
+        if not self.tg_client.is_connected():
+            await self.tg_client.connect()
         if not self.tg_client.is_connected():
             return 0
 

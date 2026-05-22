@@ -37,17 +37,17 @@ class TelegramUserClient:
             await self.client.disconnect()
 
     async def get_entity(self, username: str):
-        if not self.client:
+        if not self.client or not self.client.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         return await self.client.get_entity(username)
 
     def is_connected(self) -> bool:
-        return self.client is not None
+        return bool(self.client and self.client.is_connected())
 
     async def iter_recent_channel_posts(
         self, channel_ref: int | str, limit: int = 15
     ) -> list[TelegramChannelPost]:
-        if not self.client:
+        if not self.client or not self.client.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         from telethon.tl.custom.message import Message as TelethonMessage
 
