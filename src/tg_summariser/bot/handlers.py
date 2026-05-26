@@ -4,23 +4,19 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
+from tg_summariser.bot.commands import HELP_TEXT
 from tg_summariser.bot.keyboards import feedback_keyboard
 from tg_summariser.config import settings
 from tg_summariser.db import session_scope
 from tg_summariser.models import FeedbackValue
 from tg_summariser.services.channels import ChannelService
-from tg_summariser.services.digest_service import DigestService
-from tg_summariser.services.ingestion import IngestionService
-from tg_summariser.services.post_processor import PostProcessor
+from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQueue
 from tg_summariser.services.repositories import (
     ChannelRepository,
     FeedbackRepository,
     PostRepository,
     UserRepository,
 )
-from tg_summariser.services.ai_pipeline import AIPipeline
-from tg_summariser.services.dedup import Deduplicator
-from tg_summariser.services.scoring import RelevanceScorer
 
 router = Router()
 
@@ -44,7 +40,10 @@ def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
     return query, category, channel
 
 
-def register_handlers(channel_service: ChannelService, ingestion_service: IngestionService) -> Router:
+def register_handlers(
+    channel_service: ChannelService,
+    onboarding_queue: ChannelOnboardingQueue,
+) -> Router:
     @router.message(CommandStart())
     async def start(message: Message) -> None:
         if settings.owner_telegram_id and message.from_user and message.from_user.id != settings.owner_telegram_id:
@@ -60,13 +59,7 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
 
     @router.message(Command("help"))
     async def help_command(message: Message) -> None:
-        await message.answer(
-            "/add - инструкция по добавлению канала\n"
-            "/channels - список каналов\n"
-            "/digest - собрать дайджест сейчас\n"
-            "/hidden - показать скрытые посты\n"
-            "/search <запрос> - поиск по истории"
-        )
+        await message.answer(HELP_TEXT)
 
     @router.message(Command("add"))
     async def add_command(message: Message) -> None:
@@ -150,30 +143,18 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
             return
         async with session_scope() as session:
             repo = ChannelRepository(session)
-            user = await UserRepository(session).get_or_create(
-                message.from_user.id, message.from_user.username
-            )
             try:
                 channel = await channel_service.add_from_forward(message, repo)
             except ValueError as exc:
                 await message.answer(str(exc))
                 return
-            synced = await ingestion_service.sync_channel(session, channel)
-            processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
-            processed = await processor.process_pending(session, user.id)
-            sent = await DigestService(message.bot).send_channel_welcome_digest(
-                session=session,
-                user_id=user.id,
-                telegram_id=message.from_user.id,
-                channel_id=channel.id,
-                channel_title=channel.title,
+        enqueued = await onboarding_queue.enqueue(channel.id, message.from_user.id)
+        if enqueued:
+            await message.answer(
+                f"Канал '{channel.title}' добавлен в отслеживание и поставлен в очередь на обработку."
             )
-        await message.answer(
-            f"Канал '{channel.title}' добавлен в отслеживание.\n"
-            f"Импортировано постов: {synced}\n"
-            f"Обработано AI: {processed}\n"
-            f"Отправлено в стартовое саммари: {sent}"
-        )
+        else:
+            await message.answer(f"Канал '{channel.title}' уже стоит в очереди на обработку.")
 
     @router.message(F.text.regexp(r"(https?://t\.me/|@)"))
     async def add_channel_by_text(message: Message) -> None:
@@ -181,30 +162,18 @@ def register_handlers(channel_service: ChannelService, ingestion_service: Ingest
             return
         async with session_scope() as session:
             repo = ChannelRepository(session)
-            user = await UserRepository(session).get_or_create(
-                message.from_user.id, message.from_user.username
-            )
             try:
                 channel = await channel_service.add_from_text(message.text or "", repo)
             except Exception as exc:
                 await message.answer(f"Не удалось добавить канал: {exc}")
                 return
-            synced = await ingestion_service.sync_channel(session, channel)
-            processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
-            processed = await processor.process_pending(session, user.id)
-            sent = await DigestService(message.bot).send_channel_welcome_digest(
-                session=session,
-                user_id=user.id,
-                telegram_id=message.from_user.id,
-                channel_id=channel.id,
-                channel_title=channel.title,
+        enqueued = await onboarding_queue.enqueue(channel.id, message.from_user.id)
+        if enqueued:
+            await message.answer(
+                f"Канал '{channel.title}' добавлен в отслеживание и поставлен в очередь на обработку."
             )
-        await message.answer(
-            f"Канал '{channel.title}' добавлен в отслеживание.\n"
-            f"Импортировано постов: {synced}\n"
-            f"Обработано AI: {processed}\n"
-            f"Отправлено в стартовое саммари: {sent}"
-        )
+        else:
+            await message.answer(f"Канал '{channel.title}' уже стоит в очереди на обработку.")
 
     @router.callback_query(F.data.startswith("feedback:"))
     async def feedback_callback(callback: CallbackQuery) -> None:
