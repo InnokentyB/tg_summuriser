@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from collections.abc import Iterable
 from datetime import datetime
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Integer, Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -280,6 +281,66 @@ class FeedbackRepository:
             .group_by(Post.channel_id)
         )
         return {channel_id: float(count) for channel_id, count in result.all()}
+
+    async def post_reaction_stats(
+        self,
+        channel_id: int | None = None,
+        limit: int = 50,
+    ) -> list["PostReactionStat"]:
+        statement = (
+            select(
+                Post.id,
+                Post.channel_id,
+                Channel.title,
+                Post.telegram_message_id,
+                func.count(UserFeedback.id).label("total_reactions"),
+                func.sum((UserFeedback.value == FeedbackValue.interested).cast(Integer)).label(
+                    "interested_reactions"
+                ),
+                func.sum((UserFeedback.value == FeedbackValue.not_interested).cast(Integer)).label(
+                    "not_interested_reactions"
+                ),
+            )
+            .join(UserFeedback, UserFeedback.post_id == Post.id)
+            .join(Channel, Channel.id == Post.channel_id)
+            .group_by(Post.id, Post.channel_id, Channel.title, Post.telegram_message_id)
+            .order_by(func.count(UserFeedback.id).desc(), Post.created_at.desc())
+            .limit(limit)
+        )
+        if channel_id is not None:
+            statement = statement.where(Post.channel_id == channel_id)
+
+        rows = (await self.session.execute(statement)).all()
+        stats: list[PostReactionStat] = []
+        for row in rows:
+            total = int(row.total_reactions or 0)
+            interested = int(row.interested_reactions or 0)
+            not_interested = int(row.not_interested_reactions or 0)
+            stats.append(
+                PostReactionStat(
+                    post_id=int(row.id),
+                    channel_id=int(row.channel_id),
+                    channel_title=row.title,
+                    telegram_message_id=int(row.telegram_message_id),
+                    total_reactions=total,
+                    interested_reactions=interested,
+                    not_interested_reactions=not_interested,
+                    interested_ratio=(interested / total) if total else 0.0,
+                )
+            )
+        return stats
+
+
+@dataclass(slots=True)
+class PostReactionStat:
+    post_id: int
+    channel_id: int
+    channel_title: str
+    telegram_message_id: int
+    total_reactions: int
+    interested_reactions: int
+    not_interested_reactions: int
+    interested_ratio: float
 
 
 class DigestRepository:
