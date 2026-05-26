@@ -1,7 +1,12 @@
 from sqlalchemy import inspect
 
-from tg_summariser.models import PostStatus
-from tg_summariser.services.repositories import ChannelRepository, PostRepository, UserRepository
+from tg_summariser.models import FeedbackValue, PostStatus
+from tg_summariser.services.repositories import (
+    ChannelRepository,
+    FeedbackRepository,
+    PostRepository,
+    UserRepository,
+)
 
 
 async def test_create_post_is_idempotent(db_session) -> None:
@@ -105,3 +110,37 @@ async def test_top_candidates_for_channel_limits_results_to_single_source(db_ses
 
     assert len(candidates) == 1
     assert candidates[0].id == first_post.id
+
+
+async def test_post_reaction_stats_groups_by_post_and_channel(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=333,
+        title="Signals",
+        telegram_username="signals",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=55,
+        raw_text="Alpha",
+        normalized_text="Alpha",
+        original_link="https://t.me/signals/55",
+    )
+    first_user = await UserRepository(db_session).get_or_create(telegram_id=501, username="u1")
+    second_user = await UserRepository(db_session).get_or_create(telegram_id=502, username="u2")
+
+    feedback_repo = FeedbackRepository(db_session)
+    await feedback_repo.add_feedback(first_user.id, post.id, FeedbackValue.interested)
+    await feedback_repo.add_feedback(second_user.id, post.id, FeedbackValue.not_interested)
+
+    stats = await feedback_repo.post_reaction_stats()
+
+    assert len(stats) == 1
+    assert stats[0].post_id == post.id
+    assert stats[0].channel_id == channel.id
+    assert stats[0].channel_title == "Signals"
+    assert stats[0].telegram_message_id == 55
+    assert stats[0].total_reactions == 2
+    assert stats[0].interested_reactions == 1
+    assert stats[0].not_interested_reactions == 1
+    assert stats[0].interested_ratio == 0.5

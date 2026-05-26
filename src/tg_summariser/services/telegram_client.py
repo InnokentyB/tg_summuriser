@@ -21,15 +21,18 @@ class TelegramUserClient:
         self.client: Any | None = None
 
     async def connect(self) -> None:
-        if self.client or not settings.telegram_api_id or not settings.telegram_api_hash:
+        if not settings.telegram_api_id or not settings.telegram_api_hash:
+            return
+        if self.client and self.client.is_connected():
             return
         from telethon import TelegramClient
         from telethon.sessions import StringSession
 
-        session: str | StringSession = settings.telegram_session_name
-        if settings.telegram_session_string:
-            session = StringSession(settings.telegram_session_string)
-        self.client = TelegramClient(session, settings.telegram_api_id, settings.telegram_api_hash)
+        if not self.client:
+            session: str | StringSession = settings.telegram_session_name
+            if settings.telegram_session_string:
+                session = StringSession(settings.telegram_session_string)
+            self.client = TelegramClient(session, settings.telegram_api_id, settings.telegram_api_hash)
         await self.client.connect()
 
     async def disconnect(self) -> None:
@@ -37,17 +40,19 @@ class TelegramUserClient:
             await self.client.disconnect()
 
     async def get_entity(self, username: str):
-        if not self.client:
+        if not self.is_connected():
+            await self.connect()
+        if not self.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         return await self.client.get_entity(username)
 
     def is_connected(self) -> bool:
-        return self.client is not None
+        return bool(self.client and self.client.is_connected())
 
     async def iter_recent_channel_posts(
         self, channel_ref: int | str, limit: int = 15
     ) -> list[TelegramChannelPost]:
-        if not self.client:
+        if not self.client or not self.client.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         from telethon.tl.custom.message import Message as TelethonMessage
 
