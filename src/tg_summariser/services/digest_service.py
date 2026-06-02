@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime
 
 from aiogram import Bot
@@ -59,31 +58,40 @@ class DigestService:
         digest_repo = DigestRepository(session)
 
         digest = await digest_repo.create_digest(user_id=user_id, scheduled_for=datetime.utcnow())
-        grouped: dict[str, list[Post]] = defaultdict(list)
-        for post in posts:
-            grouped[post.category or "Без категории"].append(post)
-
         rank = 1
-        for category, category_posts in grouped.items():
-            await self.bot.send_message(telegram_id, f"<b>{category}</b>")
-            for post in category_posts:
-                post.was_sent = True
-                await digest_repo.add_item(digest.id, post.id, rank)
-                await self.bot.send_message(
-                    telegram_id,
-                    self._render_post(post),
-                    reply_markup=feedback_keyboard(post),
-                    disable_web_page_preview=True,
-                )
-                rank += 1
+        for post in posts:
+            post.was_sent = True
+            await digest_repo.add_item(digest.id, post.id, rank)
+            await self.bot.send_message(
+                telegram_id,
+                self._render_post(post),
+                reply_markup=feedback_keyboard(post),
+                disable_web_page_preview=True,
+            )
+            rank += 1
         return len(posts)
 
     def _render_post(self, post: Post) -> str:
         link = post.original_link or "Ссылка недоступна"
+        category_tag = self._category_tag(post.category)
+        why_important = self._shorten(post.why_important or "Без пояснения", limit=160)
         return (
-            f"• <b>{post.summary or 'Без саммари'}</b>\n"
-            f"Почему важно: {post.why_important or 'Без пояснения'}\n"
+            f"{category_tag} <b>{post.summary or 'Без саммари'}</b>\n"
+            f"Почему важно: {why_important}\n"
             f"Важность: {post.importance_score:.2f} | Источник: {post.channel.title}\n"
-            f"Решение: {post.explanation or 'Без пояснения'}\n"
             f"Ссылка: {link}"
         )
+
+    @staticmethod
+    def _shorten(text: str, limit: int) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 1].rstrip() + "..."
+
+    @staticmethod
+    def _category_tag(category: str | None) -> str:
+        label = (category or "Без категории").strip()
+        safe = "".join(ch if ch.isalnum() else "_" for ch in label).strip("_")
+        safe = safe[:32] or "without_category"
+        return f"<code>#{safe}</code>"

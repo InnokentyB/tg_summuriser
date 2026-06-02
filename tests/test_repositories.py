@@ -296,3 +296,37 @@ async def test_top_candidates_skip_unsent_duplicate_if_source_was_already_sent(d
     candidates = await PostRepository(db_session).top_candidates(limit=5)
 
     assert candidates == []
+
+
+async def test_post_reaction_stats_groups_by_post_and_channel(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=333,
+        title="Signals",
+        telegram_username="signals",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=55,
+        raw_text="Alpha",
+        normalized_text="Alpha",
+        original_link="https://t.me/signals/55",
+    )
+    first_user = await UserRepository(db_session).get_or_create(telegram_id=501, username="u1")
+    second_user = await UserRepository(db_session).get_or_create(telegram_id=502, username="u2")
+
+    feedback_repo = FeedbackRepository(db_session)
+    await feedback_repo.add_feedback(first_user.id, post.id, FeedbackValue.interested)
+    await feedback_repo.add_feedback(second_user.id, post.id, FeedbackValue.not_interested)
+
+    stats = await feedback_repo.post_reaction_stats()
+
+    assert len(stats) == 1
+    assert stats[0].post_id == post.id
+    assert stats[0].channel_id == channel.id
+    assert stats[0].channel_title == "Signals"
+    assert stats[0].telegram_message_id == 55
+    assert stats[0].total_reactions == 2
+    assert stats[0].interested_reactions == 1
+    assert stats[0].not_interested_reactions == 1
+    assert stats[0].interested_ratio == 0.5

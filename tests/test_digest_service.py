@@ -1,0 +1,31 @@
+from tg_summariser.models import Channel, Post
+from tg_summariser.services.digest_service import DigestService
+
+
+class DummyBot:
+    async def send_message(self, *args, **kwargs):
+        return None
+
+
+def test_render_post_uses_inline_category_tag_and_short_why() -> None:
+    service = DigestService(DummyBot())
+    channel = Channel(telegram_chat_id=1, title="AI Product", telegram_username="ai_product")
+    post = Post(
+        channel_id=1,
+        telegram_message_id=10,
+        raw_text="raw",
+        normalized_text="raw",
+        summary="Короткое саммари",
+        why_important="Это очень длинное пояснение " * 20,
+        category="AI tools",
+        importance_score=0.7,
+        original_link="https://t.me/ai_product/10",
+    )
+    post.channel = channel
+
+    rendered = service._render_post(post)
+
+    assert "<code>#AI_tools</code>" in rendered
+    assert "Решение:" not in rendered
+    assert "Почему важно:" in rendered
+    assert "Ссылка: https://t.me/ai_product/10" in rendered
