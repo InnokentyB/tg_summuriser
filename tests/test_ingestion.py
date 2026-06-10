@@ -6,12 +6,16 @@ from tg_summariser.services.telegram_client import TelegramChannelPost
 class FakeTelegramClient:
     def __init__(self, posts: list[TelegramChannelPost]) -> None:
         self.posts = posts
+        self.read_marks: list[tuple[int | str, int]] = []
 
     def is_connected(self) -> bool:
         return True
 
     async def iter_recent_channel_posts(self, channel_ref, limit: int = 15):
         return self.posts[:limit]
+
+    async def mark_channel_posts_read(self, channel_ref, max_message_id: int) -> None:
+        self.read_marks.append((channel_ref, max_message_id))
 
 
 async def test_ingestion_syncs_new_posts_only(db_session) -> None:
@@ -50,6 +54,7 @@ async def test_ingestion_syncs_new_posts_only(db_session) -> None:
     assert first_sync == 2
     assert second_sync == 0
     assert len(stored_posts) == 2
+    assert service.tg_client.read_marks == [("businessbrain", 2), ("businessbrain", 2)]
 
 
 async def test_ingestion_can_sync_single_channel(db_session) -> None:
@@ -77,3 +82,4 @@ async def test_ingestion_can_sync_single_channel(db_session) -> None:
 
     assert synced == 1
     assert len(stored_posts) == 1
+    assert service.tg_client.read_marks == [("agentsweekly", 10)]

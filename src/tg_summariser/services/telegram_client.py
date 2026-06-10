@@ -77,3 +77,9 @@ class TelegramUserClient:
                 )
             )
         return posts
+
+    async def mark_channel_posts_read(self, channel_ref: int | str, max_message_id: int) -> None:
+        if not self.client or not self.client.is_connected():
+            raise RuntimeError("Telegram user client is not connected.")
+        entity = await self.client.get_entity(channel_ref)
+        await self.client.send_read_acknowledge(entity, max_id=max_message_id, clear_mentions=True)

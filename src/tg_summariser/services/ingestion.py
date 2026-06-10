@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.models import Channel
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
 from tg_summariser.services.telegram_client import TelegramUserClient
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionService:
@@ -55,4 +59,17 @@ class IngestionService:
             )
             if created:
                 ingested += 1
+
+        if posts:
+            max_message_id = max(item.message_id for item in posts)
+            try:
+                await self.tg_client.mark_channel_posts_read(
+                    channel.telegram_username or channel.telegram_chat_id,
+                    max_message_id=max_message_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to mark source channel messages as read",
+                    extra={"channel_id": channel.id, "max_message_id": max_message_id},
+                )
         return ingested
