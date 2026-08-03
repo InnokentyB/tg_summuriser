@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,8 +16,10 @@ from tg_summariser.models import (
     Post,
     PostStatus,
     User,
+    UserCategoryPreference,
     UserFeedback,
 )
+from tg_summariser.services.dedup import Deduplicator
 
 
 def normalize_telegram_chat_id(chat_id: int) -> int:
@@ -58,6 +59,7 @@ class ChannelRepository:
         title: str,
         telegram_username: str | None,
         is_private: bool,
+        source_kind: str = "telegram_channel",
     ) -> Channel:
         normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
         channel = None
@@ -79,6 +81,7 @@ class ChannelRepository:
             channel.title = title
             channel.telegram_username = telegram_username
             channel.is_private = is_private
+            channel.source_kind = source_kind
             channel.is_active = True
             return channel
 
@@ -87,6 +90,7 @@ class ChannelRepository:
             title=title,
             telegram_username=telegram_username,
             is_private=is_private,
+            source_kind=source_kind,
         )
         self.session.add(channel)
         await self.session.flush()
@@ -164,19 +168,32 @@ class PostRepository:
         )
         return list(result.scalars())
 
-    async def top_candidates(self, limit: int = 5) -> list[Post]:
-        result = await self.session.execute(
+    async def top_candidates(self, limit: int = 5, categories: list[str] | None = None) -> list[Post]:
+        stmt = (
             select(Post)
             .options(selectinload(Post.channel))
             .where(Post.status == PostStatus.processed, Post.was_sent.is_(False))
-            .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-            .limit(limit * 5)
         )
+        if categories:
+            stmt = stmt.where(Post.category.in_(categories))
+        stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
+        result = await self.session.execute(stmt.limit(limit * 5))
         sent_keys = await self._sent_source_keys()
-        return self._dedupe_posts(list(result.scalars()), limit, excluded_keys=sent_keys)
+        sent_posts = await self._sent_posts()
+        return self._dedupe_posts(
+            list(result.scalars()),
+            limit,
+            excluded_keys=sent_keys,
+            excluded_posts=sent_posts,
+        )
 
-    async def top_candidates_for_channel(self, channel_id: int, limit: int = 5) -> list[Post]:
-        result = await self.session.execute(
+    async def top_candidates_for_channel(
+        self,
+        channel_id: int,
+        limit: int = 5,
+        categories: list[str] | None = None,
+    ) -> list[Post]:
+        stmt = (
             select(Post)
             .options(selectinload(Post.channel))
             .where(
@@ -184,11 +201,19 @@ class PostRepository:
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
             )
-            .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-            .limit(limit * 5)
         )
+        if categories:
+            stmt = stmt.where(Post.category.in_(categories))
+        stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
+        result = await self.session.execute(stmt.limit(limit * 5))
         sent_keys = await self._sent_source_keys(channel_id=channel_id)
-        return self._dedupe_posts(list(result.scalars()), limit, excluded_keys=sent_keys)
+        sent_posts = await self._sent_posts(channel_id=channel_id)
+        return self._dedupe_posts(
+            list(result.scalars()),
+            limit,
+            excluded_keys=sent_keys,
+            excluded_posts=sent_posts,
+        )
 
     async def hidden_posts(self, limit: int = 10) -> list[Post]:
         result = await self.session.execute(
@@ -230,20 +255,33 @@ class PostRepository:
         result = await self.session.execute(stmt)
         return {self._source_key(post) for post in result.scalars()}
 
+    async def _sent_posts(self, channel_id: int | None = None, limit: int = 200) -> list[Post]:
+        stmt = select(Post).where(Post.was_sent.is_(True)).order_by(Post.created_at.desc()).limit(limit)
+        if channel_id is not None:
+            stmt = stmt.where(Post.channel_id == channel_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     def _dedupe_posts(
         self,
         posts: Iterable[Post],
         limit: int,
         excluded_keys: set[str] | None = None,
+        excluded_posts: list[Post] | None = None,
     ) -> list[Post]:
         unique_posts: list[Post] = []
         seen_keys: set[str] = set(excluded_keys or set())
+        deduplicator = Deduplicator()
+        reference_posts = list(excluded_posts or [])
         for post in posts:
             key = self._source_key(post)
             if key in seen_keys:
                 continue
+            if deduplicator.find_duplicate(post, reference_posts):
+                continue
             seen_keys.add(key)
             unique_posts.append(post)
+            reference_posts.append(post)
             if len(unique_posts) >= limit:
                 break
         return unique_posts
@@ -342,6 +380,69 @@ class PostReactionStat:
     interested_reactions: int
     not_interested_reactions: int
     interested_ratio: float
+
+
+class UserCategoryPreferenceRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def enabled_categories(self, user_id: int) -> list[str]:
+        result = await self.session.execute(
+            select(UserCategoryPreference.category)
+            .where(
+                UserCategoryPreference.user_id == user_id,
+                UserCategoryPreference.is_enabled.is_(True),
+            )
+            .order_by(UserCategoryPreference.category)
+        )
+        return [row[0] for row in result.all()]
+
+    async def all_preferences(self, user_id: int) -> list[UserCategoryPreference]:
+        result = await self.session.execute(
+            select(UserCategoryPreference)
+            .where(UserCategoryPreference.user_id == user_id)
+            .order_by(UserCategoryPreference.category)
+        )
+        return list(result.scalars())
+
+    async def set_enabled(self, user_id: int, category: str, is_enabled: bool) -> UserCategoryPreference:
+        normalized = category.strip()
+        result = await self.session.execute(
+            select(UserCategoryPreference).where(
+                UserCategoryPreference.user_id == user_id,
+                UserCategoryPreference.category == normalized,
+            )
+        )
+        preference = result.scalar_one_or_none()
+        if preference:
+            preference.is_enabled = is_enabled
+            preference.updated_at = datetime.utcnow()
+            return preference
+
+        preference = UserCategoryPreference(
+            user_id=user_id,
+            category=normalized,
+            is_enabled=is_enabled,
+        )
+        self.session.add(preference)
+        await self.session.flush()
+        return preference
+
+    async def clear(self, user_id: int) -> int:
+        preferences = await self.all_preferences(user_id)
+        for preference in preferences:
+            await self.session.delete(preference)
+        return len(preferences)
+
+    async def known_categories(self, limit: int = 100) -> list[str]:
+        result = await self.session.execute(
+            select(Post.category)
+            .where(Post.category.is_not(None))
+            .group_by(Post.category)
+            .order_by(func.count(Post.id).desc(), Post.category.asc())
+            .limit(limit)
+        )
+        return [row[0] for row in result.all() if row[0]]
 
 
 class DigestRepository:

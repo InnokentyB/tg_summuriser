@@ -19,10 +19,24 @@ class Settings(BaseSettings):
     owner_telegram_id: int | None = Field(default=None, alias="OWNER_TELEGRAM_ID")
     digest_schedules: str = Field(default="09:00,14:00,19:00", alias="DIGEST_SCHEDULES")
     timezone: str = Field(default="Europe/Lisbon", alias="TIMEZONE")
+    tgarticles_database_url: str = Field(default="", alias="TGARTICLES_DATABASE_URL")
+    tgarticles_import_enabled: bool = Field(default=True, alias="TGARTICLES_IMPORT_ENABLED")
+    tgarticles_import_days: int = Field(default=3, alias="TGARTICLES_IMPORT_DAYS")
+    tgarticles_import_limit: int = Field(default=50, alias="TGARTICLES_IMPORT_LIMIT")
+    tgarticles_min_text_length: int = Field(default=900, alias="TGARTICLES_MIN_TEXT_LENGTH")
+    tgarticles_source_chat_id: int = Field(default=910000001, alias="TGARTICLES_SOURCE_CHAT_ID")
+    tgarticles_import_schedules: str = Field(
+        default="08:30,11:30,14:30,17:30,20:30",
+        alias="TGARTICLES_IMPORT_SCHEDULES",
+    )
 
     @cached_property
     def digest_times(self) -> list[str]:
         return [item.strip() for item in self.digest_schedules.split(",") if item.strip()]
+
+    @cached_property
+    def tgarticles_import_times(self) -> list[str]:
+        return [item.strip() for item in self.tgarticles_import_schedules.split(",") if item.strip()]
 
     @cached_property
     def normalized_database_url(self) -> str:

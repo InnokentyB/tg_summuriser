@@ -6,6 +6,7 @@ from tg_summariser.services.repositories import (
     FeedbackRepository,
     PostRepository,
     UserRepository,
+    UserCategoryPreferenceRepository,
 )
 
 
@@ -298,6 +299,41 @@ async def test_top_candidates_skip_unsent_duplicate_if_source_was_already_sent(d
     assert candidates == []
 
 
+async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=888,
+        title="AI Product",
+        telegram_username="ai_product",
+        is_private=False,
+    )
+    ai_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="AI post",
+        normalized_text="AI post",
+        original_link="https://t.me/ai_product/1",
+    )
+    ai_post.status = PostStatus.processed
+    ai_post.category = "AI tools"
+    ai_post.relevance_score = 0.9
+
+    business_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2,
+        raw_text="Business post",
+        normalized_text="Business post",
+        original_link="https://t.me/ai_product/2",
+    )
+    business_post.status = PostStatus.processed
+    business_post.category = "Business"
+    business_post.relevance_score = 0.8
+
+    candidates = await PostRepository(db_session).top_candidates(limit=5, categories=["AI tools"])
+
+    assert len(candidates) == 1
+    assert candidates[0].category == "AI tools"
+
+
 async def test_post_reaction_stats_groups_by_post_and_channel(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=333,
@@ -330,3 +366,21 @@ async def test_post_reaction_stats_groups_by_post_and_channel(db_session) -> Non
     assert stats[0].interested_reactions == 1
     assert stats[0].not_interested_reactions == 1
     assert stats[0].interested_ratio == 0.5
+
+
+async def test_user_category_preferences_roundtrip(db_session) -> None:
+    user = await UserRepository(db_session).get_or_create(telegram_id=600, username="owner")
+    repo = UserCategoryPreferenceRepository(db_session)
+
+    await repo.set_enabled(user.id, "AI tools", True)
+    await repo.set_enabled(user.id, "Business", False)
+
+    enabled = await repo.enabled_categories(user.id)
+    preferences = await repo.all_preferences(user.id)
+
+    assert enabled == ["AI tools"]
+    assert len(preferences) == 2
+    assert {pref.category: pref.is_enabled for pref in preferences} == {
+        "AI tools": True,
+        "Business": False,
+    }

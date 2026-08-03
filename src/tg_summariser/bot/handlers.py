@@ -11,12 +11,19 @@ from tg_summariser.db import session_scope
 from tg_summariser.models import FeedbackValue
 from tg_summariser.services.channels import ChannelService
 from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQueue
+from tg_summariser.services.ingestion import IngestionService
+from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import (
     ChannelRepository,
     FeedbackRepository,
     PostRepository,
     UserRepository,
+    UserCategoryPreferenceRepository,
 )
+from tg_summariser.services.ai_pipeline import AIPipeline
+from tg_summariser.services.dedup import Deduplicator
+from tg_summariser.services.scoring import RelevanceScorer
+from tg_summariser.services.tgarticles_importer import TGArticlesImportService
 
 router = Router()
 
@@ -42,6 +49,7 @@ def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
 
 def register_handlers(
     channel_service: ChannelService,
+    ingestion_service: IngestionService,
     onboarding_queue: ChannelOnboardingQueue,
 ) -> Router:
     @router.message(CommandStart())
@@ -74,6 +82,60 @@ def register_handlers(
             return
         await message.answer("\n".join(f"• {channel.title}" for channel in channels))
 
+    @router.message(Command("categories"))
+    async def categories_command(message: Message) -> None:
+        if not message.from_user:
+            return
+        async with session_scope() as session:
+            user = await UserRepository(session).get_or_create(
+                message.from_user.id, message.from_user.username
+            )
+            category_repo = UserCategoryPreferenceRepository(session)
+            known_categories = await category_repo.known_categories()
+            enabled_categories = set(await category_repo.enabled_categories(user.id))
+
+        if not known_categories:
+            await message.answer("Категории пока не накопились. Сначала дайте боту обработать несколько постов.")
+            return
+
+        lines = ["Категории для дайджеста:"]
+        if enabled_categories:
+            lines.append("Режим: фильтр по включенным категориям")
+        else:
+            lines.append("Режим: все категории включены")
+
+        for category in known_categories:
+            marker = "ON" if not enabled_categories or category in enabled_categories else "OFF"
+            lines.append(f"• [{marker}] {category}")
+
+        lines.append("")
+        lines.append("Команды:")
+        lines.append("/category_on <категория>")
+        lines.append("/category_off <категория>")
+        lines.append("/category_reset")
+        await message.answer("\n".join(lines))
+
+    @router.message(Command("category_on"))
+    async def category_on_command(message: Message, command: CommandObject) -> None:
+        await _update_category_filter(message, command, is_enabled=True)
+
+    @router.message(Command("category_off"))
+    async def category_off_command(message: Message, command: CommandObject) -> None:
+        await _update_category_filter(message, command, is_enabled=False)
+
+    @router.message(Command("category_reset"))
+    async def category_reset_command(message: Message) -> None:
+        if not message.from_user:
+            return
+        async with session_scope() as session:
+            user = await UserRepository(session).get_or_create(
+                message.from_user.id, message.from_user.username
+            )
+            removed = await UserCategoryPreferenceRepository(session).clear(user.id)
+        await message.answer(
+            f"Фильтр категорий сброшен. Удалено настроек: {removed}. Теперь дайджест снова показывает все категории."
+        )
+
     @router.message(Command("hidden"))
     async def hidden_command(message: Message) -> None:
         async with session_scope() as session:
@@ -99,12 +161,17 @@ def register_handlers(
                 message.from_user.id, message.from_user.username
             )
             synced = await ingestion_service.sync_channels(session)
+            article_importer = TGArticlesImportService.from_settings()
+            imported_articles = 0
+            if article_importer:
+                imported_articles = await article_importer.import_recent(session)
             processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
             processed = await processor.process_pending(session, user.id)
             sent = await DigestService(message.bot).send_digest(session, user.id, message.from_user.id)
         await message.answer(
             f"Дайджест собран.\n"
             f"Новых постов синхронизировано: {synced}\n"
+            f"Новых статей импортировано: {imported_articles}\n"
             f"Обработано AI: {processed}\n"
             f"Отправлено в дайджест: {sent}"
         )
@@ -214,3 +281,48 @@ def register_handlers(
                 await callback.message.edit_reply_markup(reply_markup=None)
 
     return router
+
+
+async def _update_category_filter(
+    message: Message,
+    command: CommandObject,
+    is_enabled: bool,
+) -> None:
+    if not message.from_user:
+        return
+
+    category = (command.args or "").strip()
+    if not category:
+        action = "включить" if is_enabled else "выключить"
+        await message.answer(f"Укажите категорию: /category_{'on' if is_enabled else 'off'} <категория>")
+        return
+
+    async with session_scope() as session:
+        user = await UserRepository(session).get_or_create(
+            message.from_user.id, message.from_user.username
+        )
+        category_repo = UserCategoryPreferenceRepository(session)
+        known_categories = await category_repo.known_categories()
+        matched = _match_category(category, known_categories)
+        if not matched:
+            await message.answer(
+                "Категория не найдена. Посмотрите доступные через /categories."
+            )
+            return
+        await category_repo.set_enabled(user.id, matched, is_enabled=is_enabled)
+
+    if is_enabled:
+        await message.answer(f"Категория включена в дайджест: {matched}")
+    else:
+        await message.answer(f"Категория исключена из дайджеста: {matched}")
+
+
+def _match_category(raw_value: str, known_categories: list[str]) -> str | None:
+    normalized = raw_value.strip().casefold()
+    for category in known_categories:
+        if category.casefold() == normalized:
+            return category
+    for category in known_categories:
+        if normalized in category.casefold():
+            return category
+    return None

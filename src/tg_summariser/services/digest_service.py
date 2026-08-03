@@ -6,7 +6,11 @@ from aiogram import Bot
 
 from tg_summariser.bot.keyboards import feedback_keyboard
 from tg_summariser.models import Post
-from tg_summariser.services.repositories import DigestRepository, PostRepository
+from tg_summariser.services.repositories import (
+    DigestRepository,
+    PostRepository,
+    UserCategoryPreferenceRepository,
+)
 
 
 class DigestService:
@@ -15,9 +19,17 @@ class DigestService:
 
     async def send_digest(self, session, user_id: int, telegram_id: int) -> int:
         post_repo = PostRepository(session)
-        posts = await post_repo.top_candidates(limit=5)
+        enabled_categories = await UserCategoryPreferenceRepository(session).enabled_categories(user_id)
+        posts = await post_repo.top_candidates(limit=5, categories=enabled_categories or None)
         if not posts:
-            await self.bot.send_message(telegram_id, "Новых релевантных постов для дайджеста пока нет.")
+            if enabled_categories:
+                category_list = ", ".join(enabled_categories)
+                await self.bot.send_message(
+                    telegram_id,
+                    f"Новых релевантных постов для выбранных категорий пока нет: {category_list}",
+                )
+            else:
+                await self.bot.send_message(telegram_id, "Новых релевантных постов для дайджеста пока нет.")
             return 0
 
         return await self.send_posts(

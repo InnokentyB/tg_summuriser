@@ -42,6 +42,7 @@ async def main() -> None:
     dispatcher.include_router(
         register_handlers(
             ChannelService(tg_client),
+            ingestion_service,
             onboarding_queue,
         )
     )

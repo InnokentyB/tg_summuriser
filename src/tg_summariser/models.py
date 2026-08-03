@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SqlEnum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -33,6 +43,7 @@ class User(Base):
 
     feedback_items: Mapped[list[UserFeedback]] = relationship(back_populates="user")
     digests: Mapped[list[Digest]] = relationship(back_populates="user")
+    category_preferences: Mapped[list[UserCategoryPreference]] = relationship(back_populates="user")
 
 
 class Channel(Base):
@@ -89,6 +100,20 @@ class UserFeedback(Base):
     post: Mapped[Post] = relationship(back_populates="feedback_items")
 
 
+class UserCategoryPreference(Base):
+    __tablename__ = "user_category_preferences"
+    __table_args__ = (UniqueConstraint("user_id", "category", name="uq_user_category_preference"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    category: Mapped[str] = mapped_column(String(255), index=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="category_preferences")
+
+
 class Digest(Base):
     __tablename__ = "digests"
 
@@ -112,4 +137,3 @@ class DigestItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     digest: Mapped[Digest] = relationship(back_populates="items")
-
