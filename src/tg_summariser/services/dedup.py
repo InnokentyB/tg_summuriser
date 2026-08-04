@@ -27,19 +27,30 @@ _STOPWORDS = {
     "was",
     "will",
     "with",
+    "автор",
     "без",
     "более",
     "был",
     "была",
     "были",
     "было",
+    "бывший",
+    "все",
+    "года",
+    "дней",
     "для",
     "его",
     "еще",
+    "ещё",
+    "если",
+    "за",
+    "из",
     "или",
     "как",
     "компания",
     "который",
+    "люди",
+    "может",
     "над",
     "новый",
     "новая",
@@ -47,6 +58,8 @@ _STOPWORDS = {
     "новые",
     "она",
     "они",
+    "от",
+    "очень",
     "под",
     "подробнее",
     "после",
@@ -56,9 +69,49 @@ _STOPWORDS = {
     "свои",
     "свою",
     "также",
+    "тоже",
+    "у",
     "уже",
     "что",
     "это",
+}
+
+_ALIASES = {
+    "акц": "stock",
+    "акции": "stock",
+    "ашенбреннер": "ashenbrenner",
+    "доказательств": "proof",
+    "доказательства": "proof",
+    "задач": "task",
+    "задачи": "task",
+    "задачу": "task",
+    "инвестиц": "investment",
+    "инфраструктур": "infrastructure",
+    "левередж": "leverage",
+    "левереджированн": "leverage",
+    "лонговал": "long",
+    "лонг": "long",
+    "математ": "math",
+    "математика": "math",
+    "математике": "math",
+    "математических": "math",
+    "модель": "model",
+    "модел": "model",
+    "невыпущенн": "unreleased",
+    "облак": "cloud",
+    "плеч": "leverage",
+    "плечах": "leverage",
+    "плечо": "leverage",
+    "сотрудник": "researcher",
+    "исследователь": "researcher",
+    "фонд": "fund",
+    "фонда": "fund",
+    "чип": "chip",
+    "чипов": "chip",
+    "чипы": "chip",
+    "шорт": "short",
+    "шортил": "short",
+    "шорты": "short",
 }
 
 
@@ -78,7 +131,7 @@ class Deduplicator:
                     return True
                 if self._token_similarity(current_text, candidate_text):
                     return True
-        return False
+        return self._same_news_event(post, candidate)
 
     def _comparison_texts(self, post: Post) -> list[str]:
         values = [post.normalized_text, post.summary or "", post.why_important or ""]
@@ -102,6 +155,22 @@ class Deduplicator:
             intersection
         )
 
+    def _same_news_event(self, post: Post, candidate: Post) -> bool:
+        left_tokens = self._news_tokens(post)
+        right_tokens = self._news_tokens(candidate)
+        if len(left_tokens) < 6 or len(right_tokens) < 6:
+            return False
+
+        intersection = left_tokens & right_tokens
+        if len(intersection) < 5:
+            return False
+
+        overlap = len(intersection) / min(len(left_tokens), len(right_tokens))
+        distinctive_overlap = self._distinctive_news_tokens(intersection)
+        if len(distinctive_overlap) >= 4 and overlap >= 0.32:
+            return True
+        return len(distinctive_overlap) >= 5 and overlap >= 0.25
+
     def _normalize_text(self, text: str) -> str:
         without_urls = _URL_RE.sub(" ", text.casefold())
         return " ".join(_TOKEN_RE.findall(without_urls))
@@ -109,11 +178,34 @@ class Deduplicator:
     def _significant_tokens(self, text: str) -> set[str]:
         tokens = set()
         for raw_token in _TOKEN_RE.findall(_URL_RE.sub(" ", text.casefold())):
-            token = self._stem_token(raw_token)
-            if len(token) < 3 or token in _STOPWORDS:
+            token = self._canonical_token(raw_token)
+            if (len(token) < 3 and not any(ch.isdigit() for ch in token)) or token in _STOPWORDS:
                 continue
             tokens.add(token)
         return tokens
+
+    def _news_tokens(self, post: Post) -> set[str]:
+        return set().union(*(self._significant_tokens(text) for text in self._comparison_texts(post)))
+
+    def _canonical_token(self, token: str) -> str:
+        if token == "x4":
+            return "4x"
+        stemmed = self._stem_token(token)
+        if stemmed.startswith("агент"):
+            return "agent"
+        if stemmed.startswith("математ"):
+            return "math"
+        if stemmed.startswith("модел"):
+            return "model"
+        if stemmed.startswith("невыпущ"):
+            return "unreleased"
+        if stemmed.startswith("левередж"):
+            return "leverage"
+        if stemmed.startswith("инфраструктур"):
+            return "infrastructure"
+        if stemmed.startswith("доказательств"):
+            return "proof"
+        return _ALIASES.get(stemmed, _ALIASES.get(token, stemmed))
 
     def _stem_token(self, token: str) -> str:
         if token.startswith("агент"):
@@ -154,3 +246,13 @@ class Deduplicator:
 
     def _has_distinctive_overlap(self, tokens: set[str]) -> bool:
         return any(any(ch.isdigit() for ch in token) or token.isascii() for token in tokens)
+
+    def _distinctive_news_tokens(self, tokens: set[str]) -> set[str]:
+        return {
+            token
+            for token in tokens
+            if token.isascii()
+            or any(ch.isdigit() for ch in token)
+            or len(token) >= 6
+            or token in set(_ALIASES.values())
+        }

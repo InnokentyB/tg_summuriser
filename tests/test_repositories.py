@@ -267,6 +267,67 @@ async def test_top_candidates_skip_unsent_duplicate_if_source_was_already_sent(d
     assert candidates == []
 
 
+async def test_top_candidates_skip_same_news_event_if_already_sent(db_session) -> None:
+    first_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=778,
+        title="AI Central",
+        telegram_username="aioftheday",
+        is_private=False,
+    )
+    second_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=779,
+        title="TGArticles Library",
+        telegram_username="tgarticles",
+        is_private=False,
+        source_kind="tgarticles",
+    )
+
+    sent_post, _ = await PostRepository(db_session).create_post(
+        channel_id=first_channel.id,
+        telegram_message_id=4969,
+        raw_text=(
+            "OpenAI сообщает, что новая невыпущенная модель Astra решила десять "
+            "математических задач, доказательства формализованы в Lean."
+        ),
+        normalized_text=(
+            "OpenAI сообщает, что новая невыпущенная модель Astra решила десять "
+            "математических задач, доказательства формализованы в Lean."
+        ),
+        original_link="https://t.me/aioftheday/4969",
+    )
+    sent_post.status = PostStatus.processed
+    sent_post.relevance_score = 0.9
+    sent_post.was_sent = True
+    sent_post.summary = (
+        "OpenAI сообщает, что модель Astra решила десять математических задач "
+        "и формализовала доказательства в Lean."
+    )
+
+    duplicate, _ = await PostRepository(db_session).create_post(
+        channel_id=second_channel.id,
+        telegram_message_id=1,
+        raw_text=(
+            "OpenAI объявила, что её ещё не выпущенная модель решила десять открытых "
+            "задач в математике; отмечена необходимость проверки заявлений."
+        ),
+        normalized_text=(
+            "OpenAI объявила, что её ещё не выпущенная модель решила десять открытых "
+            "задач в математике; отмечена необходимость проверки заявлений."
+        ),
+        original_link="https://borretti.me/article/mathematics-without-mathematicians",
+    )
+    duplicate.status = PostStatus.processed
+    duplicate.relevance_score = 0.95
+    duplicate.summary = (
+        "OpenAI объявила, что невыпущенная модель решила десять открытых задач "
+        "в математике и может изменить исследовательский процесс."
+    )
+
+    candidates = await PostRepository(db_session).top_candidates(limit=5)
+
+    assert candidates == []
+
+
 async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=888,

@@ -54,6 +54,58 @@ def test_find_duplicate_uses_ai_summary_when_original_text_is_rewritten() -> Non
     assert duplicate_id == 1
 
 
+def test_find_duplicate_matches_same_news_across_sources() -> None:
+    dedup = Deduplicator()
+    current = make_post(
+        2,
+        "OpenAI объявила, что её ещё не выпущенная модель решила десять открытых задач "
+        "в математике. Автор считает это потенциально революционным и отмечает "
+        "необходимость проверки заявлений.",
+    )
+    current.summary = (
+        "OpenAI объявила, что невыпущенная модель решила десять открытых задач "
+        "в математике и может изменить исследовательский процесс."
+    )
+    existing = [
+        make_post(
+            1,
+            "OpenAI сообщает, что новая невыпущенная модель Astra решила десять "
+            "математических задач, по которым не было прогресса десять лет; "
+            "доказательства формализованы в Lean.",
+        )
+    ]
+    existing[0].summary = (
+        "OpenAI сообщает, что модель Astra решила десять математических задач "
+        "и формализовала доказательства в Lean."
+    )
+
+    duplicate_id = dedup.find_duplicate(current, existing)
+
+    assert duplicate_id == 1
+
+
+def test_find_duplicate_matches_leveraged_ai_fund_news() -> None:
+    dedup = Deduplicator()
+    current = make_post(
+        2,
+        "Леопольд Ашенбреннер, бывший сотрудник OpenAI, создал сильно "
+        "левереджированный фонд на инфраструктуру ИИ: чипы, память, облака "
+        "и шорты на старый SaaS. При плече до 4x и маржин-коллах фонд резко просел.",
+    )
+    existing = [
+        make_post(
+            1,
+            "Управляющий 22 года, бывший исследователь OpenAI, при плечах x4 "
+            "лонговал AI-акции и производителей чипов и шортил традиционный SaaS; "
+            "после плохих дней фонд потерял большую часть стоимости.",
+        )
+    ]
+
+    duplicate_id = dedup.find_duplicate(current, existing)
+
+    assert duplicate_id == 1
+
+
 def test_find_duplicate_ignores_different_posts() -> None:
     dedup = Deduplicator()
     current = make_post(2, "A deep dive into business moats")
