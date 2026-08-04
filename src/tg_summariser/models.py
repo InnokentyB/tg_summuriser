@@ -5,6 +5,7 @@ from enum import Enum
 
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     DateTime,
     Enum as SqlEnum,
     Float,
@@ -36,7 +37,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -50,7 +51,7 @@ class Channel(Base):
     __tablename__ = "channels"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    telegram_chat_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     telegram_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     source_kind: Mapped[str] = mapped_column(String(50), default="telegram_channel")

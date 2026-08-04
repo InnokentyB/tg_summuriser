@@ -1,6 +1,6 @@
-from sqlalchemy import inspect
+from sqlalchemy import BigInteger, inspect
 
-from tg_summariser.models import FeedbackValue, PostStatus
+from tg_summariser.models import Channel, FeedbackValue, PostStatus, User
 from tg_summariser.services.repositories import (
     ChannelRepository,
     FeedbackRepository,
@@ -48,6 +48,11 @@ async def test_user_get_or_create_updates_username(db_session) -> None:
     assert same_user.username == "new_name"
 
 
+def test_telegram_identifiers_use_bigint_columns() -> None:
+    assert isinstance(User.__table__.c.telegram_id.type, BigInteger)
+    assert isinstance(Channel.__table__.c.telegram_chat_id.type, BigInteger)
+
+
 async def test_upsert_channel_merges_forwarded_and_canonical_chat_ids(db_session) -> None:
     repo = ChannelRepository(db_session)
     first = await repo.upsert_channel(
@@ -65,6 +70,27 @@ async def test_upsert_channel_merges_forwarded_and_canonical_chat_ids(db_session
 
     assert first.id == second.id
     assert second.telegram_chat_id == 1234567890
+
+
+async def test_upsert_channel_accepts_telegram_chat_id_above_int32(db_session) -> None:
+    repo = ChannelRepository(db_session)
+
+    channel = await repo.upsert_channel(
+        telegram_chat_id=2_484_784_423,
+        title="Large Telegram Channel",
+        telegram_username=None,
+        is_private=False,
+    )
+    same_channel = await repo.upsert_channel(
+        telegram_chat_id=2_484_784_423,
+        title="Large Telegram Channel Updated",
+        telegram_username=None,
+        is_private=False,
+    )
+
+    assert channel.id == same_channel.id
+    assert same_channel.telegram_chat_id == 2_484_784_423
+    assert same_channel.title == "Large Telegram Channel Updated"
 
 
 async def test_top_candidates_preloads_channel(db_session) -> None:
