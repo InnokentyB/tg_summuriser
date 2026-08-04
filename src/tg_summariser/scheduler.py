@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 

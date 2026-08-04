@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
@@ -11,6 +14,7 @@ from tg_summariser.db import session_scope
 from tg_summariser.models import FeedbackValue
 from tg_summariser.services.channels import ChannelService
 from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQueue
+from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import (
@@ -26,6 +30,7 @@ from tg_summariser.services.scoring import RelevanceScorer
 from tg_summariser.services.tgarticles_importer import TGArticlesImportService
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
@@ -45,6 +50,19 @@ def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
         elif part.lower().startswith("channel="):
             channel = part.split("=", maxsplit=1)[1].strip() or None
     return query, category, channel
+
+
+async def safe_callback_answer(
+    callback: CallbackQuery, text: str, *, show_alert: bool = False
+) -> None:
+    try:
+        await callback.answer(text, show_alert=show_alert)
+    except TelegramBadRequest as exc:
+        message = str(exc).lower()
+        if "query is too old" in message or "query id is invalid" in message:
+            logger.info("Skipped stale callback answer: %s", exc)
+            return
+        raise
 
 
 def register_handlers(
@@ -246,7 +264,7 @@ def register_handlers(
     async def feedback_callback(callback: CallbackQuery) -> None:
         parts = (callback.data or "").split(":")
         if not callback.from_user:
-            await callback.answer("Не удалось определить пользователя.", show_alert=True)
+            await safe_callback_answer(callback, "Не удалось определить пользователя.", show_alert=True)
             return
 
         async with session_scope() as session:
@@ -265,18 +283,22 @@ def register_handlers(
                 feedback_value = FeedbackValue(value_str)
                 post = await repo.get(int(post_id_str))
             else:
-                await callback.answer("Некорректная кнопка.", show_alert=True)
+                await safe_callback_answer(callback, "Некорректная кнопка.", show_alert=True)
                 return
 
             if not post:
-                await callback.answer("Пост не найден в текущей базе. Пришлите новый дайджест.", show_alert=True)
+                await safe_callback_answer(
+                    callback,
+                    "Пост не найден в текущей базе. Пришлите новый дайджест.",
+                    show_alert=True,
+                )
                 return
             await FeedbackRepository(session).add_feedback(user.id, post.id, feedback_value)
             if feedback_value == FeedbackValue.not_interested:
                 post.relevance_score = max(0.0, post.relevance_score - 0.25)
             else:
                 post.relevance_score = min(1.0, post.relevance_score + 0.15)
-            await callback.answer("Оценка сохранена.")
+            await safe_callback_answer(callback, "Оценка сохранена.")
             if callback.message:
                 await callback.message.edit_reply_markup(reply_markup=None)
 
@@ -293,7 +315,6 @@ async def _update_category_filter(
 
     category = (command.args or "").strip()
     if not category:
-        action = "включить" if is_enabled else "выключить"
         await message.answer(f"Укажите категорию: /category_{'on' if is_enabled else 'off'} <категория>")
         return
 
