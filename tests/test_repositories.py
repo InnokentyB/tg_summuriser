@@ -389,6 +389,45 @@ async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     assert candidates[0].category == "AI tools"
 
 
+async def test_channel_status_counts_and_hidden_examples(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=889,
+        title="Filtered Channel",
+        telegram_username="filtered_channel",
+        is_private=False,
+    )
+    processed_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="Relevant post",
+        normalized_text="Relevant post",
+        original_link="https://t.me/filtered_channel/1",
+    )
+    processed_post.status = PostStatus.processed
+    processed_post.relevance_score = 0.8
+
+    hidden_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2,
+        raw_text="Hidden post",
+        normalized_text="Hidden post",
+        original_link="https://t.me/filtered_channel/2",
+    )
+    hidden_post.status = PostStatus.hidden
+    hidden_post.summary = "Hidden summary"
+    hidden_post.explanation = "Слабая релевантность по текущим сигналам."
+    hidden_post.relevance_score = 0.3
+
+    repo = PostRepository(db_session)
+    counts = await repo.channel_status_counts(channel.id)
+    hidden_examples = await repo.hidden_posts_for_channel(channel.id, limit=3)
+
+    assert counts[PostStatus.processed] == 1
+    assert counts[PostStatus.hidden] == 1
+    assert counts[PostStatus.pending] == 0
+    assert hidden_examples == [hidden_post]
+
+
 async def test_post_reaction_stats_groups_by_post_and_channel(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=333,

@@ -3,7 +3,11 @@ from tg_summariser.services.digest_service import DigestService
 
 
 class DummyBot:
+    def __init__(self) -> None:
+        self.messages = []
+
     async def send_message(self, *args, **kwargs):
+        self.messages.append((args, kwargs))
         return None
 
 
@@ -29,3 +33,20 @@ def test_render_post_uses_inline_category_tag_and_short_why() -> None:
     assert "Решение:" not in rendered
     assert "Почему важно:" in rendered
     assert "Ссылка: https://t.me/ai_product/10" in rendered
+
+
+async def test_channel_welcome_digest_can_skip_empty_notification(db_session) -> None:
+    bot = DummyBot()
+    service = DigestService(bot)
+
+    sent = await service.send_channel_welcome_digest(
+        session=db_session,
+        user_id=1,
+        telegram_id=100,
+        channel_id=1,
+        channel_title="Empty Channel",
+        notify_empty=False,
+    )
+
+    assert sent == 0
+    assert bot.messages == []

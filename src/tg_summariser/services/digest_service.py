@@ -46,13 +46,15 @@ class DigestService:
         telegram_id: int,
         channel_id: int,
         channel_title: str,
+        notify_empty: bool = True,
     ) -> int:
         posts = await PostRepository(session).top_candidates_for_channel(channel_id=channel_id, limit=5)
         if not posts:
-            await self.bot.send_message(
-                telegram_id,
-                f"Канал '{channel_title}' добавлен. Подходящих постов для стартового саммари пока не нашлось.",
-            )
+            if notify_empty:
+                await self.bot.send_message(
+                    telegram_id,
+                    f"Канал '{channel_title}' добавлен. Подходящих постов для стартового саммари пока не нашлось.",
+                )
             return 0
 
         await self.bot.send_message(

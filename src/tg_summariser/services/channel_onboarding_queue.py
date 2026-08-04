@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from aiogram import Bot
 
 from tg_summariser.db import session_scope
+from tg_summariser.models import PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.post_processor import PostProcessor
-from tg_summariser.services.repositories import ChannelRepository, UserRepository
+from tg_summariser.services.repositories import ChannelRepository, PostRepository, UserRepository
 from tg_summariser.services.scoring import RelevanceScorer
 
 logger = logging.getLogger(__name__)
@@ -91,13 +92,50 @@ class ChannelOnboardingQueue:
                 telegram_id=task.telegram_user_id,
                 channel_id=channel.id,
                 channel_title=channel.title,
+                notify_empty=False,
             )
+            diagnostics = ""
+            if sent == 0:
+                diagnostics = await self._build_empty_digest_diagnostics(session, channel.id)
 
         await self.bot.send_message(
             task.telegram_user_id,
             f"Канал '{channel.title}' обработан.\n"
             f"Импортировано постов: {synced}\n"
             f"Обработано AI: {processed}\n"
-            f"Отправлено в стартовое саммари: {sent}",
+            f"Отправлено в стартовое саммари: {sent}"
+            f"{diagnostics}",
         )
 
+    async def _build_empty_digest_diagnostics(self, session, channel_id: int) -> str:
+        post_repo = PostRepository(session)
+        counts = await post_repo.channel_status_counts(channel_id)
+        sent_count = await post_repo.sent_count_for_channel(channel_id)
+        hidden_examples = await post_repo.hidden_posts_for_channel(channel_id, limit=3)
+
+        lines = [
+            "",
+            "",
+            "Посты нашлись, но фильтр не выбрал их для стартового саммари.",
+            (
+                "Статусы: "
+                f"готово {counts.get(PostStatus.processed, 0)}, "
+                f"скрыто {counts.get(PostStatus.hidden, 0)}, "
+                f"в очереди {counts.get(PostStatus.pending, 0)}, "
+                f"уже отправлено {sent_count}."
+            ),
+        ]
+        if hidden_examples:
+            lines.append("Лучшие скрытые кандидаты:")
+            for post in hidden_examples:
+                summary = self._shorten(post.summary or post.raw_text, 120)
+                explanation = self._shorten(post.explanation or "Без объяснения фильтра.", 160)
+                lines.append(f"• {summary}\n  Причина: {explanation}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _shorten(text: str, limit: int) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 1].rstrip() + "..."

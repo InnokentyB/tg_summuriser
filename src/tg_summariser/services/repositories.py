@@ -225,6 +225,33 @@ class PostRepository:
         )
         return list(result.scalars())
 
+    async def hidden_posts_for_channel(self, channel_id: int, limit: int = 3) -> list[Post]:
+        result = await self.session.execute(
+            select(Post)
+            .options(selectinload(Post.channel))
+            .where(Post.channel_id == channel_id, Post.status == PostStatus.hidden)
+            .order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars())
+
+    async def channel_status_counts(self, channel_id: int) -> dict[PostStatus, int]:
+        result = await self.session.execute(
+            select(Post.status, func.count(Post.id))
+            .where(Post.channel_id == channel_id)
+            .group_by(Post.status)
+        )
+        counts = {status: 0 for status in PostStatus}
+        for status, count in result.all():
+            counts[PostStatus(status)] = int(count)
+        return counts
+
+    async def sent_count_for_channel(self, channel_id: int) -> int:
+        result = await self.session.execute(
+            select(func.count(Post.id)).where(Post.channel_id == channel_id, Post.was_sent.is_(True))
+        )
+        return int(result.scalar_one())
+
     async def search(
         self,
         query: str,
