@@ -30,3 +30,18 @@ def test_scheduler_registers_article_import_jobs_separately(monkeypatch) -> None
         "tgarticles-import-20:30",
     }.issubset(job_ids)
     assert "digest-09:00" in job_ids
+
+
+def test_digest_jobs_have_misfire_and_overlap_protection(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "tgarticles_import_schedules", "")
+    monkeypatch.setattr(settings, "digest_schedules", "19:00")
+    settings.__dict__.pop("tgarticles_import_times", None)
+    settings.__dict__.pop("digest_times", None)
+
+    scheduler = build_scheduler(DummyBot(), DummyTelegramClient())
+
+    job = scheduler.get_job("digest-19:00")
+    assert job is not None
+    assert job.misfire_grace_time == 3600
+    assert job.coalesce is True
+    assert job.max_instances == 1
