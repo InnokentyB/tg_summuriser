@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from tg_summariser.models import (
     Channel,
+    ChannelOnboardingJob,
     Digest,
     DigestItem,
     FeedbackValue,
@@ -102,6 +103,89 @@ class ChannelRepository:
 
     async def get_by_id(self, channel_id: int) -> Channel | None:
         result = await self.session.execute(select(Channel).where(Channel.id == channel_id))
+        return result.scalar_one_or_none()
+
+    async def channels_without_posts(self) -> list[Channel]:
+        result = await self.session.execute(
+            select(Channel)
+            .outerjoin(Post)
+            .outerjoin(ChannelOnboardingJob)
+            .where(
+                Channel.is_active.is_(True),
+                Channel.source_kind == "telegram_channel",
+                or_(ChannelOnboardingJob.id.is_(None), ChannelOnboardingJob.status != "completed"),
+            )
+            .group_by(Channel.id)
+            .having(func.count(Post.id) == 0)
+            .order_by(Channel.created_at.asc())
+        )
+        return list(result.scalars())
+
+
+class ChannelOnboardingJobRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def enqueue(self, channel_id: int, telegram_user_id: int) -> tuple[ChannelOnboardingJob, bool]:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob).where(ChannelOnboardingJob.channel_id == channel_id)
+        )
+        job = result.scalar_one_or_none()
+        if job:
+            was_already_waiting = job.status in {"pending", "processing"}
+            job.telegram_user_id = telegram_user_id
+            job.status = "pending"
+            job.updated_at = datetime.utcnow()
+            job.completed_at = None
+            job.last_error = None
+            return job, not was_already_waiting
+
+        job = ChannelOnboardingJob(
+            channel_id=channel_id,
+            telegram_user_id=telegram_user_id,
+            status="pending",
+        )
+        self.session.add(job)
+        await self.session.flush()
+        return job, True
+
+    async def recoverable_jobs(self) -> list[ChannelOnboardingJob]:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob)
+            .where(ChannelOnboardingJob.status.in_(["pending", "processing"]))
+            .order_by(ChannelOnboardingJob.updated_at.asc())
+        )
+        return list(result.scalars())
+
+    async def mark_processing(self, channel_id: int) -> None:
+        job = await self._get_by_channel_id(channel_id)
+        if not job:
+            return
+        job.status = "processing"
+        job.attempts += 1
+        job.updated_at = datetime.utcnow()
+
+    async def mark_completed(self, channel_id: int) -> None:
+        job = await self._get_by_channel_id(channel_id)
+        if not job:
+            return
+        job.status = "completed"
+        job.completed_at = datetime.utcnow()
+        job.updated_at = datetime.utcnow()
+        job.last_error = None
+
+    async def mark_failed(self, channel_id: int, error: str) -> None:
+        job = await self._get_by_channel_id(channel_id)
+        if not job:
+            return
+        job.status = "pending"
+        job.last_error = error[:1000]
+        job.updated_at = datetime.utcnow()
+
+    async def _get_by_channel_id(self, channel_id: int) -> ChannelOnboardingJob | None:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob).where(ChannelOnboardingJob.channel_id == channel_id)
+        )
         return result.scalar_one_or_none()
 
 

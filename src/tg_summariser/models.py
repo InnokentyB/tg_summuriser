@@ -60,6 +60,23 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     posts: Mapped[list[Post]] = relationship(back_populates="channel")
+    onboarding_job: Mapped[ChannelOnboardingJob | None] = relationship(back_populates="channel")
+
+
+class ChannelOnboardingJob(Base):
+    __tablename__ = "channel_onboarding_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), unique=True, index=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    channel: Mapped[Channel] = relationship(back_populates="onboarding_job")
 
 
 class Post(Base):

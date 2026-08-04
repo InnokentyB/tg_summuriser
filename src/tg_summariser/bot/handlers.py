@@ -194,6 +194,26 @@ def register_handlers(
             f"Отправлено в дайджест: {sent}"
         )
 
+    @router.message(Command("process_channels"))
+    async def process_channels_command(message: Message) -> None:
+        if not message.from_user:
+            return
+        async with session_scope() as session:
+            channels = await ChannelRepository(session).channels_without_posts()
+
+        queued = 0
+        for channel in channels:
+            if await onboarding_queue.enqueue(channel.id, message.from_user.id):
+                queued += 1
+
+        if not channels:
+            await message.answer("Каналов без импортированных постов не нашлось.")
+            return
+        await message.answer(
+            f"Проверил каналы без постов: {len(channels)}.\n"
+            f"Поставлено в очередь на обработку: {queued}."
+        )
+
     @router.message(Command("search"))
     async def search_command(message: Message, command: CommandObject) -> None:
         query, category, channel = parse_search_args(command.args or "")

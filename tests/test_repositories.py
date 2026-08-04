@@ -2,6 +2,7 @@ from sqlalchemy import BigInteger, inspect
 
 from tg_summariser.models import Channel, FeedbackValue, PostStatus, User
 from tg_summariser.services.repositories import (
+    ChannelOnboardingJobRepository,
     ChannelRepository,
     FeedbackRepository,
     PostRepository,
@@ -91,6 +92,71 @@ async def test_upsert_channel_accepts_telegram_chat_id_above_int32(db_session) -
     assert channel.id == same_channel.id
     assert same_channel.telegram_chat_id == 2_484_784_423
     assert same_channel.title == "Large Telegram Channel Updated"
+
+
+async def test_channel_onboarding_job_roundtrip(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=901,
+        title="Queued Channel",
+        telegram_username="queued_channel",
+        is_private=False,
+    )
+    repo = ChannelOnboardingJobRepository(db_session)
+
+    job, created = await repo.enqueue(channel.id, telegram_user_id=100)
+    same_job, duplicate_created = await repo.enqueue(channel.id, telegram_user_id=100)
+    await repo.mark_processing(channel.id)
+    recoverable = await repo.recoverable_jobs()
+    await repo.mark_completed(channel.id)
+
+    assert created is True
+    assert duplicate_created is False
+    assert same_job.id == job.id
+    assert recoverable[0].channel_id == channel.id
+    assert same_job.status == "completed"
+    assert same_job.completed_at is not None
+
+
+async def test_channels_without_posts_finds_unprocessed_channels(db_session) -> None:
+    empty_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=902,
+        title="Empty Channel",
+        telegram_username="empty_channel",
+        is_private=False,
+    )
+    channel_with_posts = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=903,
+        title="Processed Channel",
+        telegram_username="processed_channel",
+        is_private=False,
+    )
+    await PostRepository(db_session).create_post(
+        channel_id=channel_with_posts.id,
+        telegram_message_id=1,
+        raw_text="Processed",
+        normalized_text="Processed",
+        original_link="https://t.me/processed_channel/1",
+    )
+
+    channels = await ChannelRepository(db_session).channels_without_posts()
+
+    assert [channel.id for channel in channels] == [empty_channel.id]
+
+
+async def test_channels_without_posts_skips_completed_empty_onboarding(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=904,
+        title="Already Checked Empty Channel",
+        telegram_username="checked_empty_channel",
+        is_private=False,
+    )
+    job_repo = ChannelOnboardingJobRepository(db_session)
+    await job_repo.enqueue(channel.id, telegram_user_id=100)
+    await job_repo.mark_completed(channel.id)
+
+    channels = await ChannelRepository(db_session).channels_without_posts()
+
+    assert channels == []
 
 
 async def test_top_candidates_preloads_channel(db_session) -> None:

@@ -19,7 +19,11 @@ class FakeIngestionService:
 
 
 async def test_onboarding_queue_dedupes_same_channel_enqueues() -> None:
-    queue = ChannelOnboardingQueue(bot=FakeBot(), ingestion_service=FakeIngestionService())
+    queue = ChannelOnboardingQueue(
+        bot=FakeBot(),
+        ingestion_service=FakeIngestionService(),
+        persist_tasks=False,
+    )
 
     first = await queue.enqueue(channel_id=1, telegram_user_id=100)
     second = await queue.enqueue(channel_id=1, telegram_user_id=100)

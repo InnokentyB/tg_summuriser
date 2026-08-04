@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from aiogram import Bot
 
+from tg_summariser.config import settings
 from tg_summariser.db import session_scope
 from tg_summariser.models import PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
@@ -13,7 +14,12 @@ from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.post_processor import PostProcessor
-from tg_summariser.services.repositories import ChannelRepository, PostRepository, UserRepository
+from tg_summariser.services.repositories import (
+    ChannelOnboardingJobRepository,
+    ChannelRepository,
+    PostRepository,
+    UserRepository,
+)
 from tg_summariser.services.scoring import RelevanceScorer
 
 logger = logging.getLogger(__name__)
@@ -26,9 +32,10 @@ class ChannelOnboardingTask:
 
 
 class ChannelOnboardingQueue:
-    def __init__(self, bot: Bot, ingestion_service: IngestionService) -> None:
+    def __init__(self, bot: Bot, ingestion_service: IngestionService, persist_tasks: bool = True) -> None:
         self.bot = bot
         self.ingestion_service = ingestion_service
+        self.persist_tasks = persist_tasks
         self.queue: asyncio.Queue[ChannelOnboardingTask] = asyncio.Queue()
         self.worker_task: asyncio.Task | None = None
         self.pending_channel_ids: set[int] = set()
@@ -38,6 +45,8 @@ class ChannelOnboardingQueue:
         if self.worker_task and not self.worker_task.done():
             return
         self.worker_task = asyncio.create_task(self._worker(), name="channel-onboarding-worker")
+        if self.persist_tasks:
+            await self._recover_persisted_tasks()
 
     async def stop(self) -> None:
         if not self.worker_task:
@@ -49,9 +58,42 @@ class ChannelOnboardingQueue:
     async def enqueue(self, channel_id: int, telegram_user_id: int) -> bool:
         if channel_id in self.pending_channel_ids:
             return False
+        if self.persist_tasks:
+            async with session_scope() as session:
+                _, should_enqueue = await ChannelOnboardingJobRepository(session).enqueue(
+                    channel_id=channel_id,
+                    telegram_user_id=telegram_user_id,
+                )
+            if not should_enqueue:
+                return False
         self.pending_channel_ids.add(channel_id)
         await self.queue.put(ChannelOnboardingTask(channel_id=channel_id, telegram_user_id=telegram_user_id))
         return True
+
+    async def _recover_persisted_tasks(self) -> None:
+        recovered_tasks: list[ChannelOnboardingTask] = []
+        async with session_scope() as session:
+            job_repo = ChannelOnboardingJobRepository(session)
+            if settings.owner_telegram_id:
+                for channel in await ChannelRepository(session).channels_without_posts():
+                    await job_repo.enqueue(channel.id, settings.owner_telegram_id)
+
+            for job in await job_repo.recoverable_jobs():
+                recovered_tasks.append(
+                    ChannelOnboardingTask(
+                        channel_id=job.channel_id,
+                        telegram_user_id=job.telegram_user_id,
+                    )
+                )
+
+        for task in recovered_tasks:
+            if task.channel_id in self.pending_channel_ids:
+                continue
+            self.pending_channel_ids.add(task.channel_id)
+            await self.queue.put(task)
+
+        if recovered_tasks:
+            logger.info("Recovered channel onboarding tasks", extra={"count": len(recovered_tasks)})
 
     async def _worker(self) -> None:
         while True:
@@ -62,8 +104,11 @@ class ChannelOnboardingQueue:
 
             try:
                 await self._process_task(task)
-            except Exception:
+            except Exception as exc:
                 logger.exception("Channel onboarding task failed", extra={"channel_id": task.channel_id})
+                if self.persist_tasks:
+                    async with session_scope() as session:
+                        await ChannelOnboardingJobRepository(session).mark_failed(task.channel_id, str(exc))
                 await self.bot.send_message(
                     task.telegram_user_id,
                     "Не удалось обработать добавленный канал. Попробуйте еще раз чуть позже.",
@@ -74,8 +119,13 @@ class ChannelOnboardingQueue:
 
     async def _process_task(self, task: ChannelOnboardingTask) -> None:
         async with session_scope() as session:
+            job_repo = ChannelOnboardingJobRepository(session)
+            if self.persist_tasks:
+                await job_repo.mark_processing(task.channel_id)
             channel = await ChannelRepository(session).get_by_id(task.channel_id)
             if not channel:
+                if self.persist_tasks:
+                    await job_repo.mark_failed(task.channel_id, "Channel not found")
                 await self.bot.send_message(
                     task.telegram_user_id,
                     "Канал не найден в базе. Добавьте его заново.",
@@ -97,6 +147,8 @@ class ChannelOnboardingQueue:
             diagnostics = ""
             if sent == 0:
                 diagnostics = await self._build_empty_digest_diagnostics(session, channel.id)
+            if self.persist_tasks:
+                await job_repo.mark_completed(task.channel_id)
 
         await self.bot.send_message(
             task.telegram_user_id,
