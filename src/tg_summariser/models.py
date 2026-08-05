@@ -60,7 +60,10 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     posts: Mapped[list[Post]] = relationship(back_populates="channel")
-    onboarding_job: Mapped[ChannelOnboardingJob | None] = relationship(back_populates="channel")
+    onboarding_job: Mapped[ChannelOnboardingJob | None] = relationship(
+        back_populates="channel",
+        uselist=False,
+    )
 
 
 class ChannelOnboardingJob(Base):

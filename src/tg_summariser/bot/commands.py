@@ -9,6 +9,7 @@ BOT_COMMANDS: list[BotCommand] = [
     BotCommand(command="categories", description="Настройки категорий"),
     BotCommand(command="digest", description="Собрать дайджест сейчас"),
     BotCommand(command="process_channels", description="Обработать каналы без постов"),
+    BotCommand(command="queue", description="Статус очереди обработки каналов"),
     BotCommand(command="hidden", description="Показать скрытые посты"),
     BotCommand(command="search", description="Поиск по истории"),
 ]
@@ -23,6 +24,7 @@ HELP_TEXT = (
     "/category_reset - сбросить фильтр категорий\n"
     "/digest - собрать дайджест сейчас\n"
     "/process_channels - поставить в очередь каналы без импортированных постов\n"
+    "/queue - статус очереди обработки каналов\n"
     "/hidden - показать скрытые посты\n"
     "/search <запрос> - поиск по истории"
 )

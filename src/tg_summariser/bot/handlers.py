@@ -18,6 +18,7 @@ from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import (
+    ChannelOnboardingJobRepository,
     ChannelRepository,
     FeedbackRepository,
     PostRepository,
@@ -213,6 +214,30 @@ def register_handlers(
             f"Проверил каналы без постов: {len(channels)}.\n"
             f"Поставлено в очередь на обработку: {queued}."
         )
+
+    @router.message(Command("queue"))
+    async def queue_command(message: Message) -> None:
+        async with session_scope() as session:
+            repo = ChannelOnboardingJobRepository(session)
+            counts = await repo.status_counts()
+            jobs = await repo.recent_jobs(limit=8)
+
+        lines = [
+            "Очередь обработки каналов:",
+            f"• pending: {counts.get('pending', 0)}",
+            f"• processing: {counts.get('processing', 0)}",
+            f"• completed: {counts.get('completed', 0)}",
+            f"• в памяти worker-а: {len(onboarding_queue.pending_channel_ids)}",
+        ]
+        if jobs:
+            lines.append("")
+            lines.append("Последние задачи:")
+            for job in jobs:
+                title = job.channel.title if job.channel else f"channel_id={job.channel_id}"
+                error = f" | ошибка: {job.last_error[:120]}" if job.last_error else ""
+                lines.append(f"• {title}: {job.status}, попыток {job.attempts}{error}")
+
+        await message.answer("\n".join(lines))
 
     @router.message(Command("search"))
     async def search_command(message: Message, command: CommandObject) -> None:

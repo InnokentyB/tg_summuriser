@@ -59,16 +59,20 @@ class ChannelOnboardingQueue:
         if channel_id in self.pending_channel_ids:
             return False
         if self.persist_tasks:
+            await self._ensure_worker_running()
             async with session_scope() as session:
-                _, should_enqueue = await ChannelOnboardingJobRepository(session).enqueue(
+                await ChannelOnboardingJobRepository(session).enqueue(
                     channel_id=channel_id,
                     telegram_user_id=telegram_user_id,
                 )
-            if not should_enqueue:
-                return False
         self.pending_channel_ids.add(channel_id)
         await self.queue.put(ChannelOnboardingTask(channel_id=channel_id, telegram_user_id=telegram_user_id))
         return True
+
+    async def _ensure_worker_running(self) -> None:
+        if self.worker_task and not self.worker_task.done():
+            return
+        self.worker_task = asyncio.create_task(self._worker(), name="channel-onboarding-worker")
 
     async def _recover_persisted_tasks(self) -> None:
         recovered_tasks: list[ChannelOnboardingTask] = []
@@ -103,7 +107,9 @@ class ChannelOnboardingQueue:
                 break
 
             try:
+                logger.info("Channel onboarding task started", extra={"channel_id": task.channel_id})
                 await self._process_task(task)
+                logger.info("Channel onboarding task completed", extra={"channel_id": task.channel_id})
             except Exception as exc:
                 logger.exception("Channel onboarding task failed", extra={"channel_id": task.channel_id})
                 if self.persist_tasks:

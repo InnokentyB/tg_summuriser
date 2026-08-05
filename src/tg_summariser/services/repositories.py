@@ -196,6 +196,23 @@ class ChannelOnboardingJobRepository:
         )
         return result.scalar_one_or_none()
 
+    async def status_counts(self) -> dict[str, int]:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob.status, func.count(ChannelOnboardingJob.id)).group_by(
+                ChannelOnboardingJob.status
+            )
+        )
+        return {status: int(count) for status, count in result.all()}
+
+    async def recent_jobs(self, limit: int = 10) -> list[ChannelOnboardingJob]:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob)
+            .options(selectinload(ChannelOnboardingJob.channel))
+            .order_by(ChannelOnboardingJob.updated_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars())
+
 
 class PostRepository:
     def __init__(self, session: AsyncSession) -> None:
