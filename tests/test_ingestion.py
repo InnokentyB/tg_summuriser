@@ -7,11 +7,13 @@ class FakeTelegramClient:
     def __init__(self, posts: list[TelegramChannelPost]) -> None:
         self.posts = posts
         self.read_marks: list[tuple[int | str, int]] = []
+        self.channel_refs: list[int | str] = []
 
     def is_connected(self) -> bool:
         return True
 
     async def iter_recent_channel_posts(self, channel_ref, limit: int = 15):
+        self.channel_refs.append(channel_ref)
         return self.posts[:limit]
 
     async def mark_channel_posts_read(self, channel_ref, max_message_id: int) -> None:
@@ -83,3 +85,25 @@ async def test_ingestion_can_sync_single_channel(db_session) -> None:
     assert synced == 1
     assert len(stored_posts) == 1
     assert service.tg_client.read_marks == [("agentsweekly", 10)]
+
+
+async def test_sync_channels_skips_non_telegram_sources(db_session) -> None:
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=910000001,
+        title="TGArticles Library",
+        telegram_username=None,
+        is_private=True,
+        source_kind="tg_articles",
+    )
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=777,
+        title="Real Telegram",
+        telegram_username="realtelegram",
+        is_private=False,
+    )
+
+    service = IngestionService(FakeTelegramClient([]))
+    synced = await service.sync_channels(db_session)
+
+    assert synced == 0
+    assert service.tg_client.channel_refs == ["realtelegram"]

@@ -101,6 +101,14 @@ class ChannelRepository:
         result = await self.session.execute(select(Channel).order_by(Channel.title))
         return list(result.scalars())
 
+    async def list_telegram_channels(self) -> list[Channel]:
+        result = await self.session.execute(
+            select(Channel)
+            .where(Channel.is_active.is_(True), Channel.source_kind == "telegram_channel")
+            .order_by(Channel.title)
+        )
+        return list(result.scalars())
+
     async def get_by_id(self, channel_id: int) -> Channel | None:
         result = await self.session.execute(select(Channel).where(Channel.id == channel_id))
         return result.scalar_one_or_none()
