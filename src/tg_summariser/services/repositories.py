@@ -165,6 +165,15 @@ class ChannelOnboardingJobRepository:
         )
         return list(result.scalars())
 
+    async def failed_jobs(self) -> list[ChannelOnboardingJob]:
+        result = await self.session.execute(
+            select(ChannelOnboardingJob)
+            .options(selectinload(ChannelOnboardingJob.channel))
+            .where(ChannelOnboardingJob.status == "failed")
+            .order_by(ChannelOnboardingJob.updated_at.asc())
+        )
+        return list(result.scalars())
+
     async def mark_processing(self, channel_id: int) -> None:
         job = await self._get_by_channel_id(channel_id)
         if not job:
@@ -186,7 +195,7 @@ class ChannelOnboardingJobRepository:
         job = await self._get_by_channel_id(channel_id)
         if not job:
             return
-        job.status = "pending"
+        job.status = "failed"
         job.last_error = error[:1000]
         job.updated_at = datetime.utcnow()
 

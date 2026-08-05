@@ -107,12 +107,20 @@ async def test_channel_onboarding_job_roundtrip(db_session) -> None:
     same_job, duplicate_created = await repo.enqueue(channel.id, telegram_user_id=100)
     await repo.mark_processing(channel.id)
     recoverable = await repo.recoverable_jobs()
+    await repo.mark_failed(channel.id, "boom")
+    failed = await repo.failed_jobs()
+    assert failed[0].channel_id == channel.id
+    assert failed[0].status == "failed"
+
+    reset_job, reset_created = await repo.enqueue(channel.id, telegram_user_id=100)
     await repo.mark_completed(channel.id)
 
     assert created is True
     assert duplicate_created is False
     assert same_job.id == job.id
     assert recoverable[0].channel_id == channel.id
+    assert reset_job.id == job.id
+    assert reset_created is True
     assert same_job.status == "completed"
     assert same_job.completed_at is not None
 

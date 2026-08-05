@@ -112,12 +112,20 @@ class ChannelOnboardingQueue:
                 logger.info("Channel onboarding task completed", extra={"channel_id": task.channel_id})
             except Exception as exc:
                 logger.exception("Channel onboarding task failed", extra={"channel_id": task.channel_id})
+                channel_title = f"channel_id={task.channel_id}"
                 if self.persist_tasks:
                     async with session_scope() as session:
+                        channel = await ChannelRepository(session).get_by_id(task.channel_id)
+                        if channel:
+                            channel_title = channel.title
                         await ChannelOnboardingJobRepository(session).mark_failed(task.channel_id, str(exc))
                 await self.bot.send_message(
                     task.telegram_user_id,
-                    "Не удалось обработать добавленный канал. Попробуйте еще раз чуть позже.",
+                    (
+                        f"Не удалось обработать канал '{channel_title}'.\n"
+                        f"Ошибка: {type(exc).__name__}: {self._shorten(str(exc), 500)}\n"
+                        "Задача остановлена, чтобы не спамить повторами. Детали: /queue"
+                    ),
                 )
             finally:
                 self.pending_channel_ids.discard(task.channel_id)

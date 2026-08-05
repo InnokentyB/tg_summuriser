@@ -201,17 +201,26 @@ def register_handlers(
             return
         async with session_scope() as session:
             channels = await ChannelRepository(session).channels_without_posts()
+            failed_jobs = await ChannelOnboardingJobRepository(session).failed_jobs()
 
         queued = 0
+        seen_channel_ids: set[int] = set()
         for channel in channels:
+            seen_channel_ids.add(channel.id)
             if await onboarding_queue.enqueue(channel.id, message.from_user.id):
                 queued += 1
+        for job in failed_jobs:
+            if job.channel_id in seen_channel_ids:
+                continue
+            if await onboarding_queue.enqueue(job.channel_id, message.from_user.id):
+                queued += 1
 
-        if not channels:
-            await message.answer("Каналов без импортированных постов не нашлось.")
+        total_checked = len(channels) + len([job for job in failed_jobs if job.channel_id not in seen_channel_ids])
+        if total_checked == 0:
+            await message.answer("Каналов без импортированных постов и упавших задач не нашлось.")
             return
         await message.answer(
-            f"Проверил каналы без постов: {len(channels)}.\n"
+            f"Проверил каналы без постов/с ошибками: {total_checked}.\n"
             f"Поставлено в очередь на обработку: {queued}."
         )
 
@@ -226,6 +235,7 @@ def register_handlers(
             "Очередь обработки каналов:",
             f"• pending: {counts.get('pending', 0)}",
             f"• processing: {counts.get('processing', 0)}",
+            f"• failed: {counts.get('failed', 0)}",
             f"• completed: {counts.get('completed', 0)}",
             f"• в памяти worker-а: {len(onboarding_queue.pending_channel_ids)}",
         ]
