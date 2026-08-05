@@ -15,6 +15,22 @@ class Settings(BaseSettings):
     ai_processing_limit_per_run: int = Field(default=20, alias="AI_PROCESSING_LIMIT_PER_RUN")
     ai_min_text_length: int = Field(default=120, alias="AI_MIN_TEXT_LENGTH")
     ai_max_input_chars: int = Field(default=4000, alias="AI_MAX_INPUT_CHARS")
+    ai_prefilter_enabled: bool = Field(default=True, alias="AI_PREFILTER_ENABLED")
+    ai_prefilter_strict: bool = Field(default=False, alias="AI_PREFILTER_STRICT")
+    ai_prefilter_positive_keywords: str = Field(
+        default=(
+            "ai,ии,llm,gpt,openai,anthropic,claude,agent,agents,агент,агенты,"
+            "бизнес,startup,стартап,saas,инвестиции,product,продукт"
+        ),
+        alias="AI_PREFILTER_POSITIVE_KEYWORDS",
+    )
+    ai_prefilter_negative_keywords: str = Field(
+        default=(
+            "реклама,промо,скидка,подписывайтесь,подписаться,курс,вебинар,"
+            "розыгрыш,донат,вакансия,нанимаем"
+        ),
+        alias="AI_PREFILTER_NEGATIVE_KEYWORDS",
+    )
     telegram_api_id: int | None = Field(default=None, alias="TELEGRAM_API_ID")
     telegram_api_hash: str = Field(default="", alias="TELEGRAM_API_HASH")
     telegram_session_name: str = Field(default="tg_summariser", alias="TELEGRAM_SESSION_NAME")

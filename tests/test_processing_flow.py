@@ -4,7 +4,12 @@ from tg_summariser.services.repositories import ChannelRepository, PostRepositor
 
 
 class FakeAIPipeline:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def process_post(self, text: str):
+        self.calls += 1
+
         class Result:
             language = "en"
             summary = "Short summary"
@@ -25,6 +30,26 @@ class FakeDeduplicator:
 class FakeScorer:
     def score(self, post, category_affinity, channel_affinity):
         return 0.91, PostStatus.processed, "Scored for digest."
+
+
+class HideEverythingPrefilter:
+    def decide(self, post, *, channel_affinity):
+        class Result:
+            language = "ru"
+            summary = "Hidden locally"
+            why_important = "Not important"
+            category = "Filtered"
+            importance_score = 0.1
+            relevance_score = 0.1
+            explanation = "Hidden before AI."
+
+        class Decision:
+            should_call_ai = False
+            ai_result = Result()
+            forced_status = PostStatus.hidden
+            explanation = "Hidden before AI."
+
+        return Decision()
 
 
 async def test_post_processor_enriches_pending_post(db_session) -> None:
@@ -54,3 +79,33 @@ async def test_post_processor_enriches_pending_post(db_session) -> None:
     assert post.status == PostStatus.processed
     assert post.explanation == "Scored for digest."
 
+
+async def test_post_processor_can_hide_post_before_ai(db_session) -> None:
+    user = await UserRepository(db_session).get_or_create(telegram_id=2, username="owner")
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=9003,
+        title="Promo Channel",
+        telegram_username="promochannel",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=101,
+        raw_text="Подписывайтесь на промо вебинар",
+        normalized_text="Подписывайтесь на промо вебинар",
+        original_link="https://t.me/promochannel/101",
+    )
+
+    ai_pipeline = FakeAIPipeline()
+    processor = PostProcessor(
+        ai_pipeline,
+        FakeDeduplicator(),
+        FakeScorer(),
+        prefilter=HideEverythingPrefilter(),
+    )
+    processed = await processor.process_pending(db_session, user.id)
+
+    assert processed == 1
+    assert ai_pipeline.calls == 0
+    assert post.status == PostStatus.hidden
+    assert post.category == "Filtered"
