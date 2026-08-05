@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tg_summariser.config import settings
 from tg_summariser.models import Post, PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
@@ -19,7 +20,7 @@ class PostProcessor:
     async def process_pending(self, session: AsyncSession, user_id: int) -> int:
         post_repo = PostRepository(session)
         feedback_repo = FeedbackRepository(session)
-        posts = await post_repo.pending_posts()
+        posts = await post_repo.pending_posts(limit=settings.ai_processing_limit_per_run)
         if not posts:
             return 0
 
@@ -51,4 +52,3 @@ class PostProcessor:
             existing_posts.append(post)
             processed += 1
         return processed
-

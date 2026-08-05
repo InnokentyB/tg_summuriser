@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 
 from tg_summariser.config import settings
 from tg_summariser.schemas import ProcessedPost
@@ -12,11 +12,16 @@ from tg_summariser.schemas import ProcessedPost
 class AIPipeline:
     def __init__(self) -> None:
         self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.api_disabled_reason: str | None = None
 
     async def process_post(self, text: str) -> ProcessedPost:
         clean_text = " ".join(text.split())
-        if not self.client:
+        if not self.client or self.api_disabled_reason:
             return self._fallback(clean_text)
+        if len(clean_text) < settings.ai_min_text_length:
+            return self._fallback(clean_text)
+
+        api_text = self._trim_for_api(clean_text)
 
         prompt = (
             "You process Telegram channel posts for a personal digest.\n"
@@ -25,13 +30,19 @@ class AIPipeline:
             "Use Russian for fields summary, why_important, explanation.\n"
             "Keep summary and why_important concise.\n"
             "Set scores from 0 to 1.\n"
-            f"Post:\n{clean_text}"
+            f"Post:\n{api_text}"
         )
 
-        response = await self.client.responses.create(
-            model=settings.openai_model,
-            input=prompt,
-        )
+        try:
+            response = await self.client.responses.create(
+                model=settings.openai_model,
+                input=prompt,
+            )
+        except RateLimitError as exc:
+            if self._is_insufficient_quota(exc):
+                self.api_disabled_reason = "insufficient_quota"
+                return self._fallback(clean_text)
+            raise
         content = self._extract_text(response)
         try:
             parsed = json.loads(content)
@@ -46,6 +57,11 @@ class AIPipeline:
             )
         except (ValueError, TypeError, json.JSONDecodeError):
             return self._fallback(clean_text)
+
+    def _trim_for_api(self, text: str) -> str:
+        if len(text) <= settings.ai_max_input_chars:
+            return text
+        return text[: settings.ai_max_input_chars].rstrip()
 
     def _fallback(self, text: str) -> ProcessedPost:
         lowered = text.lower()
@@ -75,3 +91,11 @@ class AIPipeline:
                     return content.text
         return "{}"
 
+    @staticmethod
+    def _is_insufficient_quota(exc: RateLimitError) -> bool:
+        body = getattr(exc, "body", None)
+        if isinstance(body, dict):
+            error = body.get("error")
+            if isinstance(error, dict):
+                return error.get("code") in {"insufficient_quota", "credit_balance_exhausted"}
+        return "insufficient_quota" in str(exc) or "credit_balance_exhausted" in str(exc)
