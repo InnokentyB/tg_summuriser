@@ -27,10 +27,10 @@ class ChannelService:
         return channel
 
     async def add_from_text(self, text: str, repo: ChannelRepository) -> Channel:
-        match = re.search(r"(?:https?://t\.me/|@)([A-Za-z0-9_]+)", text)
-        if not match:
+        usernames = extract_channel_usernames(text)
+        if not usernames:
             raise ValueError("Не удалось распознать username канала.")
-        username = match.group(1)
+        username = usernames[0]
         entity = await self.tg_client.get_entity(username)
         if not isinstance(getattr(entity, "id", None), int):
             raise ValueError("Не удалось получить данные канала.")
@@ -42,3 +42,16 @@ class ChannelService:
             is_private=False,
         )
         return channel
+
+
+def extract_channel_usernames(text: str) -> list[str]:
+    usernames: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"(?:https?://t\.me/|@)([A-Za-z0-9_]+)", text):
+        username = match.group(1)
+        normalized = username.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        usernames.append(username)
+    return usernames

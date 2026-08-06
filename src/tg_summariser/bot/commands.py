@@ -5,6 +5,7 @@ BOT_COMMANDS: list[BotCommand] = [
     BotCommand(command="start", description="Запустить бота"),
     BotCommand(command="help", description="Показать помощь"),
     BotCommand(command="add", description="Добавить канал"),
+    BotCommand(command="add_many", description="Массово добавить каналы"),
     BotCommand(command="channels", description="Список каналов"),
     BotCommand(command="categories", description="Настройки категорий"),
     BotCommand(command="digest", description="Собрать дайджест сейчас"),
@@ -17,6 +18,7 @@ BOT_COMMANDS: list[BotCommand] = [
 
 HELP_TEXT = (
     "/add - инструкция по добавлению канала\n"
+    "/add_many <список @channel> - массово добавить каналы\n"
     "/channels - список каналов\n"
     "/categories - показать категории и текущий фильтр\n"
     "/category_on <категория> - включить категорию в дайджест\n"

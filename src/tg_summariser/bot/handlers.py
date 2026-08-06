@@ -12,7 +12,7 @@ from tg_summariser.bot.keyboards import feedback_keyboard
 from tg_summariser.config import settings
 from tg_summariser.db import session_scope
 from tg_summariser.models import FeedbackValue
-from tg_summariser.services.channels import ChannelService
+from tg_summariser.services.channels import ChannelService, extract_channel_usernames
 from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQueue
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
@@ -90,7 +90,52 @@ def register_handlers(
 
     @router.message(Command("add"))
     async def add_command(message: Message) -> None:
-        await message.answer("Перешлите пост из канала сюда или отправьте ссылку вида https://t.me/channel_name.")
+        await message.answer(
+            "Перешлите пост из канала сюда, отправьте ссылку вида https://t.me/channel_name "
+            "или используйте /add_many со списком @channel."
+        )
+
+    @router.message(Command("add_many"))
+    async def add_many_command(message: Message, command: CommandObject) -> None:
+        if not message.from_user:
+            return
+        usernames = extract_channel_usernames(command.args or "")
+        if not usernames:
+            await message.answer(
+                "Пришлите список каналов после команды, например:\n"
+                "/add_many @channel_one\n@channel_two"
+            )
+            return
+
+        added = 0
+        queued = 0
+        failed: list[str] = []
+        for username in usernames:
+            async with session_scope() as session:
+                repo = ChannelRepository(session)
+                try:
+                    channel = await channel_service.add_from_text(f"@{username}", repo)
+                    added += 1
+                except Exception as exc:
+                    failed.append(f"@{username}: {type(exc).__name__}: {str(exc)[:120]}")
+                    continue
+
+            if await onboarding_queue.enqueue(channel.id, message.from_user.id):
+                queued += 1
+
+        lines = [
+            "Массовое добавление завершено.",
+            f"Найдено username: {len(usernames)}",
+            f"Добавлено/обновлено каналов: {added}",
+            f"Поставлено в очередь: {queued}",
+        ]
+        if failed:
+            lines.append("")
+            lines.append("Ошибки:")
+            lines.extend(f"• {item}" for item in failed[:10])
+            if len(failed) > 10:
+                lines.append(f"• ...и ещё {len(failed) - 10}")
+        await message.answer("\n".join(lines))
 
     @router.message(Command("channels"))
     async def channels_command(message: Message) -> None:
