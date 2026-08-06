@@ -227,6 +227,42 @@ async def test_create_post_dedupes_same_public_post_by_original_link(db_session)
     assert first_post.id == second_post.id
 
 
+async def test_create_post_tolerates_existing_duplicate_rows(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=334,
+        title="AI Product",
+        telegram_username="ai_product_dupes",
+        is_private=False,
+    )
+    first_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2169,
+        raw_text="Codex import from Claude",
+        normalized_text="Codex import from Claude",
+        original_link="https://t.me/ai_product_dupes/2169",
+    )
+    duplicate = first_post.__class__(
+        channel_id=channel.id,
+        telegram_message_id=2169,
+        raw_text="Codex import duplicate row",
+        normalized_text="Codex import duplicate row",
+        original_link="https://t.me/ai_product_dupes/2169",
+    )
+    db_session.add(duplicate)
+    await db_session.flush()
+
+    same_post, created = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2169,
+        raw_text="Codex import again",
+        normalized_text="Codex import again",
+        original_link="https://t.me/ai_product_dupes/2169",
+    )
+
+    assert created is False
+    assert same_post.id == first_post.id
+
+
 async def test_get_by_telegram_source_finds_post_for_normalized_chat_id(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=-1001286689600,

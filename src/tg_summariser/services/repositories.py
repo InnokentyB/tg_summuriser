@@ -37,8 +37,10 @@ class UserRepository:
         self.session = session
 
     async def get_or_create(self, telegram_id: int, username: str | None = None) -> User:
-        result = await self.session.execute(select(User).where(User.telegram_id == telegram_id))
-        user = result.scalar_one_or_none()
+        result = await self.session.execute(
+            select(User).where(User.telegram_id == telegram_id).order_by(User.id.asc())
+        )
+        user = result.scalars().first()
         if user:
             if username and user.username != username:
                 user.username = username
@@ -67,15 +69,19 @@ class ChannelRepository:
 
         if telegram_username:
             result = await self.session.execute(
-                select(Channel).where(Channel.telegram_username == telegram_username)
+                select(Channel)
+                .where(Channel.telegram_username == telegram_username)
+                .order_by(Channel.id.asc())
             )
-            channel = result.scalar_one_or_none()
+            channel = result.scalars().first()
 
         if channel is None:
             result = await self.session.execute(
-                select(Channel).where(Channel.telegram_chat_id == normalized_chat_id)
+                select(Channel)
+                .where(Channel.telegram_chat_id == normalized_chat_id)
+                .order_by(Channel.id.asc())
             )
-            channel = result.scalar_one_or_none()
+            channel = result.scalars().first()
 
         if channel:
             channel.telegram_chat_id = normalized_chat_id
@@ -136,9 +142,11 @@ class ChannelOnboardingJobRepository:
 
     async def enqueue(self, channel_id: int, telegram_user_id: int) -> tuple[ChannelOnboardingJob, bool]:
         result = await self.session.execute(
-            select(ChannelOnboardingJob).where(ChannelOnboardingJob.channel_id == channel_id)
+            select(ChannelOnboardingJob)
+            .where(ChannelOnboardingJob.channel_id == channel_id)
+            .order_by(ChannelOnboardingJob.id.asc())
         )
-        job = result.scalar_one_or_none()
+        job = result.scalars().first()
         if job:
             was_already_waiting = job.status in {"pending", "processing"}
             job.telegram_user_id = telegram_user_id
@@ -201,9 +209,11 @@ class ChannelOnboardingJobRepository:
 
     async def _get_by_channel_id(self, channel_id: int) -> ChannelOnboardingJob | None:
         result = await self.session.execute(
-            select(ChannelOnboardingJob).where(ChannelOnboardingJob.channel_id == channel_id)
+            select(ChannelOnboardingJob)
+            .where(ChannelOnboardingJob.channel_id == channel_id)
+            .order_by(ChannelOnboardingJob.id.asc())
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def status_counts(self) -> dict[str, int]:
         result = await self.session.execute(
@@ -238,15 +248,17 @@ class PostRepository:
         result = await self.session.execute(
             select(Post).where(
                 Post.channel_id == channel_id, Post.telegram_message_id == telegram_message_id
-            )
+            ).order_by(Post.id.asc())
         )
-        existing = result.scalar_one_or_none()
+        existing = result.scalars().first()
         if existing:
             return existing, False
 
         if original_link:
-            result = await self.session.execute(select(Post).where(Post.original_link == original_link))
-            existing = result.scalar_one_or_none()
+            result = await self.session.execute(
+                select(Post).where(Post.original_link == original_link).order_by(Post.id.asc())
+            )
+            existing = result.scalars().first()
             if existing:
                 return existing, False
 
@@ -277,8 +289,9 @@ class PostRepository:
                 Channel.telegram_chat_id == normalized_chat_id,
                 Post.telegram_message_id == telegram_message_id,
             )
+            .order_by(Post.id.asc())
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def pending_posts(self, limit: int | None = None) -> list[Post]:
         stmt = select(Post).where(Post.status == PostStatus.pending).order_by(Post.created_at.desc())
@@ -559,9 +572,9 @@ class UserCategoryPreferenceRepository:
             select(UserCategoryPreference).where(
                 UserCategoryPreference.user_id == user_id,
                 UserCategoryPreference.category == normalized,
-            )
+            ).order_by(UserCategoryPreference.id.asc())
         )
-        preference = result.scalar_one_or_none()
+        preference = result.scalars().first()
         if preference:
             preference.is_enabled = is_enabled
             preference.updated_at = datetime.utcnow()
