@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.models import Channel
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
-from tg_summariser.services.telegram_client import TelegramUserClient
+from tg_summariser.services.telegram_client import TelegramChannelPost, TelegramUserClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,24 @@ class IngestionService:
 
         ingested = 0
         for channel in channels:
-            ingested += await self.sync_channel(session, channel, limit=limit_per_channel, post_repo=post_repo)
+            try:
+                ingested += await self.sync_channel(
+                    session,
+                    channel,
+                    limit=limit_per_channel,
+                    post_repo=post_repo,
+                )
+            except Exception as exc:
+                if _is_telegram_flood_wait(exc):
+                    logger.warning(
+                        "Skipping channel sync due to Telegram flood wait",
+                        extra={"channel_id": channel.id, "channel_title": channel.title},
+                    )
+                    continue
+                logger.exception(
+                    "Failed to sync channel",
+                    extra={"channel_id": channel.id, "channel_title": channel.title},
+                )
         return ingested
 
     async def sync_channel(
@@ -42,10 +59,7 @@ class IngestionService:
             return 0
 
         repo = post_repo or PostRepository(session)
-        posts = await self.tg_client.iter_recent_channel_posts(
-            channel.telegram_username or channel.telegram_chat_id,
-            limit=limit,
-        )
+        posts, channel_ref = await self._iter_recent_posts_with_fallback(channel, limit)
 
         ingested = 0
         for item in posts:
@@ -64,12 +78,49 @@ class IngestionService:
             max_message_id = max(item.message_id for item in posts)
             try:
                 await self.tg_client.mark_channel_posts_read(
-                    channel.telegram_username or channel.telegram_chat_id,
+                    channel_ref,
                     max_message_id=max_message_id,
                 )
-            except Exception:
+            except Exception as exc:
+                if _is_telegram_flood_wait(exc):
+                    logger.warning(
+                        "Skipping read mark due to Telegram flood wait",
+                        extra={"channel_id": channel.id, "max_message_id": max_message_id},
+                    )
+                    return ingested
                 logger.exception(
                     "Failed to mark source channel messages as read",
                     extra={"channel_id": channel.id, "max_message_id": max_message_id},
                 )
         return ingested
+
+    async def _iter_recent_posts_with_fallback(
+        self,
+        channel: Channel,
+        limit: int,
+    ) -> tuple[list[TelegramChannelPost], int | str]:
+        refs: list[int | str] = [channel.telegram_chat_id]
+        if channel.telegram_username:
+            refs.append(channel.telegram_username)
+
+        last_error: Exception | None = None
+        for channel_ref in refs:
+            try:
+                posts = await self.tg_client.iter_recent_channel_posts(channel_ref, limit=limit)
+                return posts, channel_ref
+            except Exception as exc:
+                if _is_telegram_flood_wait(exc):
+                    raise
+                last_error = exc
+                logger.warning(
+                    "Failed to fetch channel posts by reference, trying fallback if available",
+                    extra={"channel_id": channel.id, "channel_ref": channel_ref},
+                )
+
+        if last_error:
+            raise last_error
+        return [], channel.telegram_chat_id
+
+
+def _is_telegram_flood_wait(exc: Exception) -> bool:
+    return type(exc).__name__ == "FloodWaitError" or "FloodWaitError" in str(exc)

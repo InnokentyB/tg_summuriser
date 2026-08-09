@@ -4,8 +4,13 @@ from tg_summariser.services.telegram_client import TelegramChannelPost
 
 
 class FakeTelegramClient:
-    def __init__(self, posts: list[TelegramChannelPost]) -> None:
+    def __init__(
+        self,
+        posts: list[TelegramChannelPost],
+        failures: dict[int | str, Exception] | None = None,
+    ) -> None:
         self.posts = posts
+        self.failures = failures or {}
         self.read_marks: list[tuple[int | str, int]] = []
         self.channel_refs: list[int | str] = []
 
@@ -14,6 +19,8 @@ class FakeTelegramClient:
 
     async def iter_recent_channel_posts(self, channel_ref, limit: int = 15):
         self.channel_refs.append(channel_ref)
+        if channel_ref in self.failures:
+            raise self.failures[channel_ref]
         return self.posts[:limit]
 
     async def mark_channel_posts_read(self, channel_ref, max_message_id: int) -> None:
@@ -56,7 +63,7 @@ async def test_ingestion_syncs_new_posts_only(db_session) -> None:
     assert first_sync == 2
     assert second_sync == 0
     assert len(stored_posts) == 2
-    assert service.tg_client.read_marks == [("businessbrain", 2), ("businessbrain", 2)]
+    assert service.tg_client.read_marks == [(321, 2), (321, 2)]
 
 
 async def test_ingestion_can_sync_single_channel(db_session) -> None:
@@ -84,7 +91,7 @@ async def test_ingestion_can_sync_single_channel(db_session) -> None:
 
     assert synced == 1
     assert len(stored_posts) == 1
-    assert service.tg_client.read_marks == [("agentsweekly", 10)]
+    assert service.tg_client.read_marks == [(654, 10)]
 
 
 async def test_sync_channels_skips_non_telegram_sources(db_session) -> None:
@@ -106,4 +113,67 @@ async def test_sync_channels_skips_non_telegram_sources(db_session) -> None:
     synced = await service.sync_channels(db_session)
 
     assert synced == 0
-    assert service.tg_client.channel_refs == ["realtelegram"]
+    assert service.tg_client.channel_refs == [777]
+
+
+async def test_ingestion_falls_back_to_username_if_chat_id_lookup_fails(db_session) -> None:
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=778,
+        title="Fallback Telegram",
+        telegram_username="fallbacktelegram",
+        is_private=False,
+    )
+
+    posts = [
+        TelegramChannelPost(
+            channel_chat_id=778,
+            channel_title="Fallback Telegram",
+            channel_username="fallbacktelegram",
+            message_id=10,
+            text="Fallback lookup works",
+            link="https://t.me/fallbacktelegram/10",
+        )
+    ]
+    client = FakeTelegramClient(posts, failures={778: RuntimeError("Could not find entity")})
+    service = IngestionService(client)
+
+    synced = await service.sync_channels(db_session)
+
+    assert synced == 1
+    assert client.channel_refs == [778, "fallbacktelegram"]
+    assert client.read_marks == [("fallbacktelegram", 10)]
+
+
+async def test_ingestion_skips_channel_on_telegram_flood_wait(db_session) -> None:
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=779,
+        title="Flooded Telegram",
+        telegram_username="floodedtelegram",
+        is_private=False,
+    )
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=780,
+        title="Healthy Telegram",
+        telegram_username="healthytelegram",
+        is_private=False,
+    )
+    posts = [
+        TelegramChannelPost(
+            channel_chat_id=780,
+            channel_title="Healthy Telegram",
+            channel_username="healthytelegram",
+            message_id=11,
+            text="Healthy channel still syncs",
+            link="https://t.me/healthytelegram/11",
+        )
+    ]
+    client = FakeTelegramClient(
+        posts,
+        failures={779: RuntimeError("FloodWaitError: A wait of 50369 seconds is required")},
+    )
+    service = IngestionService(client)
+
+    synced = await service.sync_channels(db_session)
+
+    assert synced == 1
+    assert client.channel_refs == [779, 780]
