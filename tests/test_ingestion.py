@@ -1,6 +1,16 @@
+import pytest
+
+from tg_summariser.config import settings
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
 from tg_summariser.services.telegram_client import TelegramChannelPost
+
+
+@pytest.fixture(autouse=True)
+def fast_telegram_sync(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "telegram_sync_channel_limit", 100)
+    monkeypatch.setattr(settings, "telegram_sync_min_interval_minutes", 0)
+    monkeypatch.setattr(settings, "telegram_sync_delay_seconds", 0)
 
 
 class FakeTelegramClient:
@@ -177,3 +187,30 @@ async def test_ingestion_skips_channel_on_telegram_flood_wait(db_session) -> Non
 
     assert synced == 1
     assert client.channel_refs == [779, 780]
+
+
+async def test_ingestion_respects_channel_limit_and_sync_interval(db_session, monkeypatch) -> None:
+    first_channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=781,
+        title="First Telegram",
+        telegram_username="firsttelegram",
+        is_private=False,
+    )
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=782,
+        title="Second Telegram",
+        telegram_username="secondtelegram",
+        is_private=False,
+    )
+    monkeypatch.setattr(settings, "telegram_sync_channel_limit", 1)
+    monkeypatch.setattr(settings, "telegram_sync_min_interval_minutes", 360)
+
+    service = IngestionService(FakeTelegramClient([]))
+    first_sync = await service.sync_channels(db_session)
+    second_sync = await service.sync_channels(db_session)
+    await db_session.refresh(first_channel)
+
+    assert first_sync == 0
+    assert second_sync == 0
+    assert service.tg_client.channel_refs == [781, 782]
+    assert first_channel.last_synced_at is not None

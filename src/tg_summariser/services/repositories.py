@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import Integer, Select, func, or_, select
+from sqlalchemy import Integer, Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -114,6 +114,32 @@ class ChannelRepository:
             .order_by(Channel.title)
         )
         return list(result.scalars())
+
+    async def list_due_telegram_channels(
+        self,
+        *,
+        limit: int,
+        min_interval_minutes: int,
+    ) -> list[Channel]:
+        cutoff = datetime.utcnow() - timedelta(minutes=min_interval_minutes)
+        result = await self.session.execute(
+            select(Channel)
+            .where(
+                Channel.is_active.is_(True),
+                Channel.source_kind == "telegram_channel",
+                or_(Channel.last_synced_at.is_(None), Channel.last_synced_at <= cutoff),
+            )
+            .order_by(Channel.last_synced_at.asc().nullsfirst(), Channel.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars())
+
+    async def mark_synced(self, channel_id: int, synced_at: datetime | None = None) -> None:
+        await self.session.execute(
+            update(Channel)
+            .where(Channel.id == channel_id)
+            .values(last_synced_at=synced_at or datetime.utcnow())
+        )
 
     async def get_by_id(self, channel_id: int) -> Channel | None:
         result = await self.session.execute(select(Channel).where(Channel.id == channel_id))

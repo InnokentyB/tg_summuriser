@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tg_summariser.config import settings
 from tg_summariser.models import Channel
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
 from tg_summariser.services.telegram_client import TelegramChannelPost, TelegramUserClient
@@ -22,10 +24,13 @@ class IngestionService:
             return 0
         channel_repo = ChannelRepository(session)
         post_repo = PostRepository(session)
-        channels = await channel_repo.list_telegram_channels()
+        channels = await channel_repo.list_due_telegram_channels(
+            limit=max(settings.telegram_sync_channel_limit, 0),
+            min_interval_minutes=max(settings.telegram_sync_min_interval_minutes, 0),
+        )
 
         ingested = 0
-        for channel in channels:
+        for index, channel in enumerate(channels):
             try:
                 ingested += await self.sync_channel(
                     session,
@@ -44,6 +49,12 @@ class IngestionService:
                     "Failed to sync channel",
                     extra={"channel_id": channel.id, "channel_title": channel.title},
                 )
+            finally:
+                await channel_repo.mark_synced(channel.id)
+                await session.flush()
+
+            if index < len(channels) - 1 and settings.telegram_sync_delay_seconds > 0:
+                await asyncio.sleep(settings.telegram_sync_delay_seconds)
         return ingested
 
     async def sync_channel(

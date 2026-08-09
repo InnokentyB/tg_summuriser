@@ -58,6 +58,7 @@ class Channel(Base):
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     posts: Mapped[list[Post]] = relationship(back_populates="channel")
     onboarding_job: Mapped[ChannelOnboardingJob | None] = relationship(
