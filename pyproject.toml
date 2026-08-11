@@ -5,7 +5,7 @@ description = "Telegram channel summarizer MVP"
 requires-python = ">=3.11"
 dependencies = [
   "aiogram>=3.7,<4.0",
-  "telethon>=1.36,<2.0",
+  "telethon>=1.44,<2.0",
   "sqlalchemy>=2.0,<3.0",
   "greenlet>=3.0,<4.0",
   "asyncpg>=0.29,<1.0",
