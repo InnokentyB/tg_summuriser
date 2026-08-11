@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import Integer, Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,41 +115,11 @@ class ChannelRepository:
         )
         return list(result.scalars())
 
-    async def list_due_telegram_channels(
-        self,
-        *,
-        limit: int,
-        min_interval_minutes: int,
-    ) -> list[Channel]:
-        cutoff = datetime.utcnow() - timedelta(minutes=min_interval_minutes)
-        result = await self.session.execute(
-            select(Channel)
-            .where(
-                Channel.is_active.is_(True),
-                Channel.source_kind == "telegram_channel",
-                or_(Channel.last_synced_at.is_(None), Channel.last_synced_at <= cutoff),
-            )
-            .order_by(Channel.last_synced_at.asc().nullsfirst(), Channel.created_at.asc())
-            .limit(limit)
-        )
-        return list(result.scalars())
-
     async def count_telegram_channels(self) -> int:
         result = await self.session.execute(
             select(func.count(Channel.id)).where(
                 Channel.is_active.is_(True),
                 Channel.source_kind == "telegram_channel",
-            )
-        )
-        return int(result.scalar_one())
-
-    async def count_due_telegram_channels(self, *, min_interval_minutes: int) -> int:
-        cutoff = datetime.utcnow() - timedelta(minutes=min_interval_minutes)
-        result = await self.session.execute(
-            select(func.count(Channel.id)).where(
-                Channel.is_active.is_(True),
-                Channel.source_kind == "telegram_channel",
-                or_(Channel.last_synced_at.is_(None), Channel.last_synced_at <= cutoff),
             )
         )
         return int(result.scalar_one())

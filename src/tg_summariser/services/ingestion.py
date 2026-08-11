@@ -24,10 +24,7 @@ class IngestionService:
             return 0
         channel_repo = ChannelRepository(session)
         post_repo = PostRepository(session)
-        channels = await channel_repo.list_due_telegram_channels(
-            limit=max(settings.telegram_sync_channel_limit, 0),
-            min_interval_minutes=max(settings.telegram_sync_min_interval_minutes, 0),
-        )
+        channels = await channel_repo.list_telegram_channels()
 
         ingested = 0
         for index, channel in enumerate(channels):

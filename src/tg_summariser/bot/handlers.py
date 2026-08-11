@@ -164,9 +164,6 @@ def register_handlers(
             channel_repo = ChannelRepository(session)
             channels = await channel_repo.list_channels()
             total_telegram_channels = await channel_repo.count_telegram_channels()
-            due_telegram_channels = await channel_repo.count_due_telegram_channels(
-                min_interval_minutes=max(settings.telegram_sync_min_interval_minutes, 0),
-            )
         if not channels:
             await message.answer("Пока нет подключенных каналов.")
             return
@@ -174,9 +171,10 @@ def register_handlers(
         lines = [
             f"Каналы: {len(channels)}",
             (
-                "Telegram к чтению сейчас: "
-                f"{due_telegram_channels}/{total_telegram_channels}, "
-                f"за проход бот берёт до {settings.telegram_sync_channel_limit}"
+                "Telegram-каналов: "
+                f"{total_telegram_channels}. "
+                "В каждом дайджесте бот обходит все активные каналы "
+                f"с паузой {settings.telegram_sync_delay_seconds:g} сек."
             ),
             "",
         ]
