@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from tg_summariser.config import settings
@@ -9,6 +11,7 @@ from tg_summariser.services.telegram_client import TelegramChannelPost
 @pytest.fixture(autouse=True)
 def fast_telegram_sync(monkeypatch) -> None:
     monkeypatch.setattr(settings, "telegram_sync_delay_seconds", 0)
+    monkeypatch.setattr(settings, "telegram_channel_sync_timeout_seconds", 5)
 
 
 class FakeTelegramClient:
@@ -16,9 +19,11 @@ class FakeTelegramClient:
         self,
         posts: list[TelegramChannelPost],
         failures: dict[int | str, Exception] | None = None,
+        delays: dict[int | str, float] | None = None,
     ) -> None:
         self.posts = posts
         self.failures = failures or {}
+        self.delays = delays or {}
         self.read_marks: list[tuple[int | str, int]] = []
         self.channel_refs: list[int | str] = []
 
@@ -27,6 +32,8 @@ class FakeTelegramClient:
 
     async def iter_recent_channel_posts(self, channel_ref, limit: int = 15):
         self.channel_refs.append(channel_ref)
+        if channel_ref in self.delays:
+            await asyncio.sleep(self.delays[channel_ref])
         if channel_ref in self.failures:
             raise self.failures[channel_ref]
         return self.posts[:limit]
@@ -210,3 +217,36 @@ async def test_ingestion_syncs_all_channels_each_run(db_session) -> None:
     assert second_sync == 0
     assert service.tg_client.channel_refs == [781, 782, 781, 782]
     assert first_channel.last_synced_at is not None
+
+
+async def test_ingestion_skips_timed_out_channel_and_continues(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "telegram_channel_sync_timeout_seconds", 0.01)
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=783,
+        title="A Slow Telegram",
+        telegram_username="slowtelegram",
+        is_private=False,
+    )
+    await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=784,
+        title="B Fast Telegram",
+        telegram_username="fasttelegram",
+        is_private=False,
+    )
+    posts = [
+        TelegramChannelPost(
+            channel_chat_id=784,
+            channel_title="Fast Telegram",
+            channel_username="fasttelegram",
+            message_id=12,
+            text="Fast channel still syncs",
+            link="https://t.me/fasttelegram/12",
+        )
+    ]
+    client = FakeTelegramClient(posts, delays={783: 0.1})
+    service = IngestionService(client)
+
+    synced = await service.sync_channels(db_session)
+
+    assert synced == 1
+    assert client.channel_refs == [783, 784]

@@ -62,6 +62,7 @@ Optional:
 - `AI_PREFILTER_POSITIVE_KEYWORDS` - comma-separated topic keywords for strict prefiltering
 - `AI_PREFILTER_NEGATIVE_KEYWORDS` - comma-separated promo/noise keywords hidden before OpenAI
 - `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `15`
+- `TELEGRAM_CHANNEL_SYNC_TIMEOUT_SECONDS` - max time spent on one Telegram channel, default `45`
 - `DIGEST_SCHEDULES`
 - `TIMEZONE`
 - `TGARTICLES_DATABASE_URL` - Postgres URL for importing article candidates from TGArticles

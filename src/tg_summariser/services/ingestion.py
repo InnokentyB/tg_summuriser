@@ -29,11 +29,23 @@ class IngestionService:
         ingested = 0
         for index, channel in enumerate(channels):
             try:
-                ingested += await self.sync_channel(
-                    session,
-                    channel,
-                    limit=limit_per_channel,
-                    post_repo=post_repo,
+                ingested += await asyncio.wait_for(
+                    self.sync_channel(
+                        session,
+                        channel,
+                        limit=limit_per_channel,
+                        post_repo=post_repo,
+                    ),
+                    timeout=(
+                        settings.telegram_channel_sync_timeout_seconds
+                        if settings.telegram_channel_sync_timeout_seconds > 0
+                        else 1
+                    ),
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Skipping channel sync due to timeout",
+                    extra={"channel_id": channel.id, "channel_title": channel.title},
                 )
             except Exception as exc:
                 if _is_telegram_flood_wait(exc):
@@ -42,9 +54,14 @@ class IngestionService:
                         extra={"channel_id": channel.id, "channel_title": channel.title},
                     )
                     continue
-                logger.exception(
-                    "Failed to sync channel",
-                    extra={"channel_id": channel.id, "channel_title": channel.title},
+                logger.warning(
+                    "Failed to sync channel: %s",
+                    _safe_error_summary(exc),
+                    extra={
+                        "channel_id": channel.id,
+                        "channel_title": channel.title,
+                        "error_type": type(exc).__name__,
+                    },
                 )
             finally:
                 await channel_repo.mark_synced(channel.id)
@@ -96,9 +113,14 @@ class IngestionService:
                         extra={"channel_id": channel.id, "max_message_id": max_message_id},
                     )
                     return ingested
-                logger.exception(
-                    "Failed to mark source channel messages as read",
-                    extra={"channel_id": channel.id, "max_message_id": max_message_id},
+                logger.warning(
+                    "Failed to mark source channel messages as read: %s",
+                    _safe_error_summary(exc),
+                    extra={
+                        "channel_id": channel.id,
+                        "max_message_id": max_message_id,
+                        "error_type": type(exc).__name__,
+                    },
                 )
         return ingested
 
@@ -122,7 +144,11 @@ class IngestionService:
                 last_error = exc
                 logger.warning(
                     "Failed to fetch channel posts by reference, trying fallback if available",
-                    extra={"channel_id": channel.id, "channel_ref": channel_ref},
+                    extra={
+                        "channel_id": channel.id,
+                        "channel_ref": channel_ref,
+                        "error_type": type(exc).__name__,
+                    },
                 )
 
         if last_error:
@@ -132,3 +158,10 @@ class IngestionService:
 
 def _is_telegram_flood_wait(exc: Exception) -> bool:
     return type(exc).__name__ == "FloodWaitError" or "FloodWaitError" in str(exc)
+
+
+def _safe_error_summary(exc: Exception, limit: int = 240) -> str:
+    summary = " ".join(str(exc).split())
+    if len(summary) <= limit:
+        return summary
+    return summary[: limit - 1].rstrip() + "..."
