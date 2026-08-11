@@ -35,12 +35,12 @@ class Settings(BaseSettings):
     telegram_api_hash: str = Field(default="", alias="TELEGRAM_API_HASH")
     telegram_session_name: str = Field(default="tg_summariser", alias="TELEGRAM_SESSION_NAME")
     telegram_session_string: str = Field(default="", alias="TELEGRAM_SESSION_STRING")
-    telegram_sync_channel_limit: int = Field(default=5, alias="TELEGRAM_SYNC_CHANNEL_LIMIT")
+    telegram_sync_channel_limit: int = Field(default=10, alias="TELEGRAM_SYNC_CHANNEL_LIMIT")
     telegram_sync_min_interval_minutes: int = Field(
-        default=360,
+        default=240,
         alias="TELEGRAM_SYNC_MIN_INTERVAL_MINUTES",
     )
-    telegram_sync_delay_seconds: float = Field(default=8.0, alias="TELEGRAM_SYNC_DELAY_SECONDS")
+    telegram_sync_delay_seconds: float = Field(default=6.0, alias="TELEGRAM_SYNC_DELAY_SECONDS")
     owner_telegram_id: int | None = Field(default=None, alias="OWNER_TELEGRAM_ID")
     digest_schedules: str = Field(default="09:00,14:00,19:00", alias="DIGEST_SCHEDULES")
     timezone: str = Field(default="Europe/Lisbon", alias="TIMEZONE")

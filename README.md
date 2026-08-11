@@ -61,9 +61,9 @@ Optional:
 - `AI_PREFILTER_STRICT` - hide posts without positive topic keywords unless the channel has positive feedback, default `false`
 - `AI_PREFILTER_POSITIVE_KEYWORDS` - comma-separated topic keywords for strict prefiltering
 - `AI_PREFILTER_NEGATIVE_KEYWORDS` - comma-separated promo/noise keywords hidden before OpenAI
-- `TELEGRAM_SYNC_CHANNEL_LIMIT` - max Telegram channels read per scheduled digest run, default `5`
-- `TELEGRAM_SYNC_MIN_INTERVAL_MINUTES` - minimum pause before reading the same channel again, default `360`
-- `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `8`
+- `TELEGRAM_SYNC_CHANNEL_LIMIT` - max Telegram channels read per scheduled digest run, default `10`
+- `TELEGRAM_SYNC_MIN_INTERVAL_MINUTES` - minimum pause before reading the same channel again, default `240`
+- `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `6`
 - `DIGEST_SCHEDULES`
 - `TIMEZONE`
 - `TGARTICLES_DATABASE_URL` - Postgres URL for importing article candidates from TGArticles

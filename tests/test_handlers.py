@@ -1,8 +1,14 @@
+from datetime import datetime, timedelta
+
 import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import AnswerCallbackQuery
 
-from tg_summariser.bot.handlers import parse_search_args, safe_callback_answer
+from tg_summariser.bot.handlers import (
+    format_channel_sync_status,
+    parse_search_args,
+    safe_callback_answer,
+)
 
 
 class CallbackStub:
@@ -30,6 +36,15 @@ def test_parse_search_args_without_filters() -> None:
     assert query == "business models"
     assert category is None
     assert channel is None
+
+
+def test_format_channel_sync_status() -> None:
+    now = datetime(2026, 8, 11, 12, 0, 0)
+
+    assert format_channel_sync_status(None, now=now) == "ещё не читали"
+    assert format_channel_sync_status(now - timedelta(minutes=17), now=now) == "читали 17 мин назад"
+    assert format_channel_sync_status(now - timedelta(hours=5), now=now) == "читали 5 ч назад"
+    assert format_channel_sync_status(now - timedelta(days=2), now=now) == "читали 2 д назад"
 
 
 async def test_safe_callback_answer_ignores_stale_query() -> None:

@@ -134,6 +134,26 @@ class ChannelRepository:
         )
         return list(result.scalars())
 
+    async def count_telegram_channels(self) -> int:
+        result = await self.session.execute(
+            select(func.count(Channel.id)).where(
+                Channel.is_active.is_(True),
+                Channel.source_kind == "telegram_channel",
+            )
+        )
+        return int(result.scalar_one())
+
+    async def count_due_telegram_channels(self, *, min_interval_minutes: int) -> int:
+        cutoff = datetime.utcnow() - timedelta(minutes=min_interval_minutes)
+        result = await self.session.execute(
+            select(func.count(Channel.id)).where(
+                Channel.is_active.is_(True),
+                Channel.source_kind == "telegram_channel",
+                or_(Channel.last_synced_at.is_(None), Channel.last_synced_at <= cutoff),
+            )
+        )
+        return int(result.scalar_one())
+
     async def mark_synced(self, channel_id: int, synced_at: datetime | None = None) -> None:
         await self.session.execute(
             update(Channel)

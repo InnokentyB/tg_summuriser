@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -51,6 +52,26 @@ def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
         elif part.lower().startswith("channel="):
             channel = part.split("=", maxsplit=1)[1].strip() or None
     return query, category, channel
+
+
+def format_channel_sync_status(last_synced_at: datetime | None, now: datetime | None = None) -> str:
+    if last_synced_at is None:
+        return "ещё не читали"
+
+    current_time = now or datetime.utcnow()
+    elapsed_seconds = max(int((current_time - last_synced_at).total_seconds()), 0)
+    elapsed_minutes = elapsed_seconds // 60
+    if elapsed_minutes < 1:
+        return "читали только что"
+    if elapsed_minutes < 60:
+        return f"читали {elapsed_minutes} мин назад"
+
+    elapsed_hours = elapsed_minutes // 60
+    if elapsed_hours < 24:
+        return f"читали {elapsed_hours} ч назад"
+
+    elapsed_days = elapsed_hours // 24
+    return f"читали {elapsed_days} д назад"
 
 
 async def safe_callback_answer(
@@ -140,11 +161,32 @@ def register_handlers(
     @router.message(Command("channels"))
     async def channels_command(message: Message) -> None:
         async with session_scope() as session:
-            channels = await ChannelRepository(session).list_channels()
+            channel_repo = ChannelRepository(session)
+            channels = await channel_repo.list_channels()
+            total_telegram_channels = await channel_repo.count_telegram_channels()
+            due_telegram_channels = await channel_repo.count_due_telegram_channels(
+                min_interval_minutes=max(settings.telegram_sync_min_interval_minutes, 0),
+            )
         if not channels:
             await message.answer("Пока нет подключенных каналов.")
             return
-        await message.answer("\n".join(f"• {channel.title}" for channel in channels))
+
+        lines = [
+            f"Каналы: {len(channels)}",
+            (
+                "Telegram к чтению сейчас: "
+                f"{due_telegram_channels}/{total_telegram_channels}, "
+                f"за проход бот берёт до {settings.telegram_sync_channel_limit}"
+            ),
+            "",
+        ]
+        for channel in channels:
+            if channel.source_kind == "telegram_channel":
+                status = format_channel_sync_status(channel.last_synced_at)
+            else:
+                status = "внешний источник"
+            lines.append(f"• {channel.title} — {status}")
+        await message.answer("\n".join(lines))
 
     @router.message(Command("categories"))
     async def categories_command(message: Message) -> None:
