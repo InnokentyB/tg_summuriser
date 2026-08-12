@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta
+
 from sqlalchemy import BigInteger, inspect
 
 from tg_summariser.models import Channel, FeedbackValue, PostStatus, User
 from tg_summariser.services.repositories import (
     ChannelOnboardingJobRepository,
     ChannelRepository,
+    DigestRepository,
     FeedbackRepository,
     PostRepository,
     UserRepository,
@@ -462,6 +465,130 @@ async def test_top_candidates_skip_same_news_event_if_already_sent(db_session) -
     candidates = await PostRepository(db_session).top_candidates(limit=5)
 
     assert candidates == []
+
+
+async def test_top_candidates_skip_same_article_for_seven_days(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=780,
+        title="Use Case Reader",
+        telegram_username="usecasereader",
+        is_private=False,
+    )
+    user = await UserRepository(db_session).get_or_create(telegram_id=42)
+    digest = await DigestRepository(db_session).create_digest(
+        user_id=user.id,
+        scheduled_for=datetime.utcnow() - timedelta(days=1),
+    )
+
+    sent_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=614,
+        raw_text="Article of the day: https://example.com/from-classification-to-autonomy",
+        normalized_text="Article of the day: https://example.com/from-classification-to-autonomy",
+        original_link="https://t.me/usecasereader/614",
+    )
+    sent_post.status = PostStatus.processed
+    sent_post.relevance_score = 0.9
+    sent_post.was_sent = True
+    await DigestRepository(db_session).add_item(digest.id, sent_post.id, rank=1)
+
+    repeated_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=616,
+        raw_text="Another take on https://example.com/from-classification-to-autonomy",
+        normalized_text="Another take on https://example.com/from-classification-to-autonomy",
+        original_link="https://t.me/usecasereader/616",
+    )
+    repeated_post.status = PostStatus.processed
+    repeated_post.relevance_score = 0.95
+
+    candidates = await PostRepository(db_session).top_candidates(limit=5)
+
+    assert candidates == []
+
+
+async def test_top_candidates_allow_same_article_after_seven_days(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=781,
+        title="Use Case Reader",
+        telegram_username="usecasereader_old",
+        is_private=False,
+    )
+    user = await UserRepository(db_session).get_or_create(telegram_id=43)
+    digest = await DigestRepository(db_session).create_digest(
+        user_id=user.id,
+        scheduled_for=datetime.utcnow() - timedelta(days=8),
+    )
+
+    sent_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=614,
+        raw_text="Article of the day: https://example.com/from-classification-to-autonomy",
+        normalized_text="Article of the day: https://example.com/from-classification-to-autonomy",
+        original_link="https://t.me/usecasereader/614",
+    )
+    sent_post.status = PostStatus.processed
+    sent_post.relevance_score = 0.9
+    sent_post.was_sent = True
+    item = await DigestRepository(db_session).add_item(digest.id, sent_post.id, rank=1)
+    item.created_at = datetime.utcnow() - timedelta(days=8)
+
+    repeated_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=616,
+        raw_text="Another take on https://example.com/from-classification-to-autonomy",
+        normalized_text="Another take on https://example.com/from-classification-to-autonomy",
+        original_link="https://t.me/usecasereader/616",
+    )
+    repeated_post.status = PostStatus.processed
+    repeated_post.relevance_score = 0.95
+
+    candidates = await PostRepository(db_session).top_candidates(limit=5)
+
+    assert [post.id for post in candidates] == [repeated_post.id]
+
+
+async def test_top_candidates_limit_one_vendor_per_digest(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=782,
+        title="Use Case Reader",
+        telegram_username="usecasereader_vendor",
+        is_private=False,
+    )
+    repo = PostRepository(db_session)
+    visure_first, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=617,
+        raw_text="Visure Solutions requirements platform overview",
+        normalized_text="Visure Solutions requirements platform overview",
+        original_link="https://t.me/usecasereader/617",
+    )
+    visure_first.status = PostStatus.processed
+    visure_first.relevance_score = 0.95
+
+    visure_second, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=618,
+        raw_text="Another Visure Solutions case study",
+        normalized_text="Another Visure Solutions case study",
+        original_link="https://t.me/usecasereader/618",
+    )
+    visure_second.status = PostStatus.processed
+    visure_second.relevance_score = 0.9
+
+    gitlab_post, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=619,
+        raw_text="GitLab software delivery case study",
+        normalized_text="GitLab software delivery case study",
+        original_link="https://t.me/usecasereader/619",
+    )
+    gitlab_post.status = PostStatus.processed
+    gitlab_post.relevance_score = 0.85
+
+    candidates = await repo.top_candidates(limit=5)
+
+    assert [post.id for post in candidates] == [visure_first.id, gitlab_post.id]
 
 
 async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:

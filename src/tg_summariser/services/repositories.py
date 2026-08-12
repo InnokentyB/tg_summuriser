@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import Integer, Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,20 @@ from tg_summariser.models import (
     UserFeedback,
 )
 from tg_summariser.services.dedup import Deduplicator
+
+_URL_RE = re.compile(r"https?://[^\s<>()\"']+", re.IGNORECASE)
+_TRACKING_QUERY_PREFIXES = ("utm_",)
+_TRACKING_QUERY_PARAMS = {"fbclid", "gclid", "yclid"}
+_TELEGRAM_HOSTS = {"t.me", "telegram.me", "telegram.dog"}
+_KNOWN_VENDOR_PATTERNS = (
+    ("visure", re.compile(r"\bvisure(?:\s+solutions)?\b", re.IGNORECASE)),
+    ("netflix", re.compile(r"\bnetflix\b", re.IGNORECASE)),
+    ("gitlab", re.compile(r"\bgitlab\b", re.IGNORECASE)),
+    ("aws", re.compile(r"\baws\b|\bamazon\s+web\s+services\b", re.IGNORECASE)),
+    ("langchain", re.compile(r"\blangchain\b", re.IGNORECASE)),
+    ("openai", re.compile(r"\bopenai\b", re.IGNORECASE)),
+    ("anthropic", re.compile(r"\banthropic\b|\bclaude\b", re.IGNORECASE)),
+)
 
 
 def normalize_telegram_chat_id(chat_id: int) -> int:
@@ -327,14 +343,17 @@ class PostRepository:
         if categories:
             stmt = stmt.where(Post.category.in_(categories))
         stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-        result = await self.session.execute(stmt.limit(limit * 5))
+        result = await self.session.execute(stmt.limit(limit * 10))
         sent_keys = await self._sent_source_keys()
         sent_posts = await self._sent_posts()
+        recent_article_keys = await self._recent_digest_article_keys(days=7)
         return self._dedupe_posts(
             list(result.scalars()),
             limit,
             excluded_keys=sent_keys,
             excluded_posts=sent_posts,
+            recent_article_keys=recent_article_keys,
+            enforce_vendor_diversity=True,
         )
 
     async def top_candidates_for_channel(
@@ -355,14 +374,17 @@ class PostRepository:
         if categories:
             stmt = stmt.where(Post.category.in_(categories))
         stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-        result = await self.session.execute(stmt.limit(limit * 5))
+        result = await self.session.execute(stmt.limit(limit * 10))
         sent_keys = await self._sent_source_keys(channel_id=channel_id)
         sent_posts = await self._sent_posts(channel_id=channel_id)
+        recent_article_keys = await self._recent_digest_article_keys(days=7)
         return self._dedupe_posts(
             list(result.scalars()),
             limit,
             excluded_keys=sent_keys,
             excluded_posts=sent_posts,
+            recent_article_keys=recent_article_keys,
+            enforce_vendor_diversity=False,
         )
 
     async def hidden_posts(self, limit: int = 10) -> list[Post]:
@@ -439,24 +461,53 @@ class PostRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def _recent_digest_article_keys(self, days: int) -> set[str]:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        stmt = (
+            select(Post)
+            .join(DigestItem, DigestItem.post_id == Post.id)
+            .where(DigestItem.created_at >= cutoff)
+            .order_by(DigestItem.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return {
+            article_key
+            for post in result.scalars()
+            if (article_key := self._article_key(post)) is not None
+        }
+
     def _dedupe_posts(
         self,
         posts: Iterable[Post],
         limit: int,
         excluded_keys: set[str] | None = None,
         excluded_posts: list[Post] | None = None,
+        recent_article_keys: set[str] | None = None,
+        enforce_vendor_diversity: bool = False,
     ) -> list[Post]:
         unique_posts: list[Post] = []
         seen_keys: set[str] = set(excluded_keys or set())
+        seen_article_keys: set[str] = set(recent_article_keys or set())
+        seen_vendor_keys: set[str] = set()
         deduplicator = Deduplicator()
         reference_posts = list(excluded_posts or [])
         for post in posts:
             key = self._source_key(post)
             if key in seen_keys:
                 continue
+            article_key = self._article_key(post)
+            if article_key and article_key in seen_article_keys:
+                continue
+            vendor_key = self._vendor_key(post)
+            if enforce_vendor_diversity and vendor_key and vendor_key in seen_vendor_keys:
+                continue
             if deduplicator.find_duplicate(post, reference_posts):
                 continue
             seen_keys.add(key)
+            if article_key:
+                seen_article_keys.add(article_key)
+            if vendor_key:
+                seen_vendor_keys.add(vendor_key)
             unique_posts.append(post)
             reference_posts.append(post)
             if len(unique_posts) >= limit:
@@ -468,6 +519,79 @@ class PostRepository:
         if post.original_link:
             return f"link:{post.original_link}"
         return f"channel:{post.channel_id}:message:{post.telegram_message_id}"
+
+    @classmethod
+    def _article_key(cls, post: Post) -> str | None:
+        for url in cls._external_urls(post):
+            return f"url:{url}"
+        return None
+
+    @classmethod
+    def _vendor_key(cls, post: Post) -> str | None:
+        text = " ".join(
+            value
+            for value in (post.summary, post.raw_text, post.normalized_text, post.why_important)
+            if value
+        )
+        for vendor_key, pattern in _KNOWN_VENDOR_PATTERNS:
+            if pattern.search(text):
+                return f"vendor:{vendor_key}"
+
+        for url in cls._external_urls(post):
+            host = urlsplit(url).hostname or ""
+            if host:
+                return f"domain:{cls._registrable_domain(host)}"
+        return None
+
+    @classmethod
+    def _external_urls(cls, post: Post) -> list[str]:
+        values = [post.original_link, post.raw_text, post.normalized_text, post.summary, post.why_important]
+        urls: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not value:
+                continue
+            for raw_url in _URL_RE.findall(value):
+                url = cls._canonical_url(raw_url)
+                if not url:
+                    continue
+                host = urlsplit(url).hostname or ""
+                if host in _TELEGRAM_HOSTS or host.endswith(".telegram.org"):
+                    continue
+                if url in seen:
+                    continue
+                seen.add(url)
+                urls.append(url)
+        return urls
+
+    @staticmethod
+    def _canonical_url(raw_url: str) -> str | None:
+        cleaned = raw_url.rstrip(".,;:!?)]}»")
+        parsed = urlsplit(cleaned)
+        if not parsed.scheme or not parsed.netloc:
+            return None
+
+        host = (parsed.hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = parsed.path.rstrip("/") or "/"
+        query = urlencode(
+            [
+                (key, value)
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                if key.lower() not in _TRACKING_QUERY_PARAMS
+                and not key.lower().startswith(_TRACKING_QUERY_PREFIXES)
+            ],
+            doseq=True,
+        )
+        return urlunsplit((parsed.scheme.lower(), host, path, query, ""))
+
+    @staticmethod
+    def _registrable_domain(host: str) -> str:
+        parts = host.lower().removeprefix("www.").split(".")
+        if len(parts) <= 2:
+            return ".".join(parts)
+        return ".".join(parts[-2:])
 
 
 class FeedbackRepository:
