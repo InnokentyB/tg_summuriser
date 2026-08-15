@@ -76,3 +76,20 @@ async def test_tgarticles_importer_is_idempotent_by_article_link(db_session) -> 
     assert first_imported == 1
     assert second_imported == 0
     assert len(posts) == 1
+
+
+async def test_tgarticles_importer_accepts_links_longer_than_500_characters(db_session) -> None:
+    long_link = "https://example.com/redirect?token=" + "x" * 600
+    article = TGArticleCandidate(
+        article_id=102,
+        title="Article behind a tracking redirect",
+        text="Useful article text " * 80,
+        original_link=long_link,
+    )
+    service = TGArticlesImportService(FakeTGArticlesSource([article]), source_chat_id=910000099)
+
+    imported = await service.import_recent(db_session)
+    posts = await PostRepository(db_session).pending_posts()
+
+    assert imported == 1
+    assert posts[0].original_link == long_link

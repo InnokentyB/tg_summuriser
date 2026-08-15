@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 
 from aiogram import Bot
 
@@ -86,13 +87,15 @@ class DigestService:
         return len(posts)
 
     def _render_post(self, post: Post) -> str:
-        link = post.original_link or "Ссылка недоступна"
+        link = escape(post.original_link or "Ссылка недоступна", quote=True)
         category_tag = self._category_tag(post.category)
-        why_important = self._shorten(post.why_important or "Без пояснения", limit=160)
+        summary = escape(post.summary or "Без саммари")
+        why_important = escape(self._shorten(post.why_important or "Без пояснения", limit=160))
+        source_title = escape(post.channel.title)
         return (
-            f"{category_tag} <b>{post.summary or 'Без саммари'}</b>\n"
+            f"{category_tag} <b>{summary}</b>\n"
             f"Почему важно: {why_important}\n"
-            f"Важность: {post.importance_score:.2f} | Источник: {post.channel.title}\n"
+            f"Важность: {post.importance_score:.2f} | Источник: {source_title}\n"
             f"Ссылка: {link}"
         )
 

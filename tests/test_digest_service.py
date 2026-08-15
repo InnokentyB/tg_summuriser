@@ -35,6 +35,30 @@ def test_render_post_uses_inline_category_tag_and_short_why() -> None:
     assert "Ссылка: https://t.me/ai_product/10" in rendered
 
 
+def test_render_post_escapes_html_from_article_content() -> None:
+    service = DigestService(DummyBot())
+    channel = Channel(telegram_chat_id=1, title="AI <News>", telegram_username="ai_news")
+    post = Post(
+        channel_id=1,
+        telegram_message_id=11,
+        raw_text="raw",
+        normalized_text="raw",
+        summary="Use <key> & value",
+        why_important="Compare <old> with <new>",
+        category="AI tools",
+        importance_score=0.8,
+        original_link="https://example.com/?a=1&b=2",
+    )
+    post.channel = channel
+
+    rendered = service._render_post(post)
+
+    assert "<key>" not in rendered
+    assert "Use &lt;key&gt; &amp; value" in rendered
+    assert "AI &lt;News&gt;" in rendered
+    assert "https://example.com/?a=1&amp;b=2" in rendered
+
+
 async def test_channel_welcome_digest_can_skip_empty_notification(db_session) -> None:
     bot = DummyBot()
     service = DigestService(bot)

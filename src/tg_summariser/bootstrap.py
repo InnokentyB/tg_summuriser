@@ -15,11 +15,36 @@ async def init_db(engine: AsyncEngine) -> None:
         )
         if conn.dialect.name == "postgresql":
             await _upgrade_postgres_bigint_columns(conn)
+            await _upgrade_postgres_text_columns(conn)
 
 
 async def _upgrade_postgres_bigint_columns(conn) -> None:
     await _upgrade_postgres_column_to_bigint(conn, "users", "telegram_id")
     await _upgrade_postgres_column_to_bigint(conn, "channels", "telegram_chat_id")
+
+
+async def _upgrade_postgres_text_columns(conn) -> None:
+    await _upgrade_postgres_column_to_text(conn, "posts", "original_link")
+
+
+async def _upgrade_postgres_column_to_text(conn, table_name: str, column_name: str) -> None:
+    result = await conn.execute(
+        text(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = :table_name
+              AND column_name = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    )
+    data_type = result.scalar_one_or_none()
+    if data_type == "text" or data_type is None:
+        return
+
+    await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {column_name} TYPE TEXT"))
 
 
 async def _upgrade_postgres_column_to_bigint(conn, table_name: str, column_name: str) -> None:

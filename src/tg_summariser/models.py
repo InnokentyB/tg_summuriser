@@ -89,7 +89,7 @@ class Post(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
     telegram_message_id: Mapped[int] = mapped_column(Integer, index=True)
-    original_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    original_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
     normalized_text: Mapped[str] = mapped_column(Text)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
