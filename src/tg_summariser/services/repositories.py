@@ -334,7 +334,11 @@ class PostRepository:
         )
         return list(result.scalars())
 
-    async def top_candidates(self, limit: int = 5, categories: list[str] | None = None) -> list[Post]:
+    async def top_candidates(
+        self,
+        limit: int | None = None,
+        categories: list[str] | None = None,
+    ) -> list[Post]:
         stmt = (
             select(Post)
             .options(selectinload(Post.channel))
@@ -343,7 +347,9 @@ class PostRepository:
         if categories:
             stmt = stmt.where(Post.category.in_(categories))
         stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-        result = await self.session.execute(stmt.limit(limit * 10))
+        if limit is not None:
+            stmt = stmt.limit(limit * 10)
+        result = await self.session.execute(stmt)
         sent_keys = await self._sent_source_keys()
         sent_posts = await self._sent_posts()
         recent_article_keys = await self._recent_digest_article_keys(days=7)
@@ -359,7 +365,7 @@ class PostRepository:
     async def top_candidates_for_channel(
         self,
         channel_id: int,
-        limit: int = 5,
+        limit: int | None = None,
         categories: list[str] | None = None,
     ) -> list[Post]:
         stmt = (
@@ -374,7 +380,9 @@ class PostRepository:
         if categories:
             stmt = stmt.where(Post.category.in_(categories))
         stmt = stmt.order_by(Post.relevance_score.desc(), Post.importance_score.desc(), Post.created_at.desc())
-        result = await self.session.execute(stmt.limit(limit * 10))
+        if limit is not None:
+            stmt = stmt.limit(limit * 10)
+        result = await self.session.execute(stmt)
         sent_keys = await self._sent_source_keys(channel_id=channel_id)
         sent_posts = await self._sent_posts(channel_id=channel_id)
         recent_article_keys = await self._recent_digest_article_keys(days=7)
@@ -479,7 +487,7 @@ class PostRepository:
     def _dedupe_posts(
         self,
         posts: Iterable[Post],
-        limit: int,
+        limit: int | None,
         excluded_keys: set[str] | None = None,
         excluded_posts: list[Post] | None = None,
         recent_article_keys: set[str] | None = None,
@@ -510,7 +518,7 @@ class PostRepository:
                 seen_vendor_keys.add(vendor_key)
             unique_posts.append(post)
             reference_posts.append(post)
-            if len(unique_posts) >= limit:
+            if limit is not None and len(unique_posts) >= limit:
                 break
         return unique_posts
 

@@ -626,6 +626,41 @@ async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     assert candidates[0].category == "AI tools"
 
 
+async def test_top_candidates_have_no_default_count_limit(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=890,
+        title="Unlimited Digest",
+        telegram_username="unlimited_digest",
+        is_private=False,
+    )
+    repo = PostRepository(db_session)
+    topics = [
+        "quantum sensor calibration",
+        "restaurant supply logistics",
+        "satellite wildfire mapping",
+        "medical trial recruitment",
+        "battery recycling chemistry",
+        "language learning research",
+        "ocean freight insurance",
+    ]
+    created_posts = []
+    for message_id, topic in enumerate(topics, start=1):
+        post, _ = await repo.create_post(
+            channel_id=channel.id,
+            telegram_message_id=message_id,
+            raw_text=topic,
+            normalized_text=topic,
+            original_link=f"https://t.me/unlimited_digest/{message_id}",
+        )
+        post.status = PostStatus.processed
+        post.relevance_score = 1 - message_id / 100
+        created_posts.append(post)
+
+    candidates = await repo.top_candidates()
+
+    assert [post.id for post in candidates] == [post.id for post in created_posts]
+
+
 async def test_channel_status_counts_and_hidden_examples(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=889,

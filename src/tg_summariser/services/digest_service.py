@@ -21,7 +21,7 @@ class DigestService:
     async def send_digest(self, session, user_id: int, telegram_id: int) -> int:
         post_repo = PostRepository(session)
         enabled_categories = await UserCategoryPreferenceRepository(session).enabled_categories(user_id)
-        posts = await post_repo.top_candidates(limit=5, categories=enabled_categories or None)
+        posts = await post_repo.top_candidates(categories=enabled_categories or None)
         if not posts:
             if enabled_categories:
                 category_list = ", ".join(enabled_categories)
@@ -49,7 +49,7 @@ class DigestService:
         channel_title: str,
         notify_empty: bool = True,
     ) -> int:
-        posts = await PostRepository(session).top_candidates_for_channel(channel_id=channel_id, limit=5)
+        posts = await PostRepository(session).top_candidates_for_channel(channel_id=channel_id)
         if not posts:
             if notify_empty:
                 await self.bot.send_message(
@@ -73,16 +73,18 @@ class DigestService:
         digest_repo = DigestRepository(session)
 
         digest = await digest_repo.create_digest(user_id=user_id, scheduled_for=datetime.utcnow())
+        await session.commit()
         rank = 1
         for post in posts:
-            post.was_sent = True
-            await digest_repo.add_item(digest.id, post.id, rank)
             await self.bot.send_message(
                 telegram_id,
                 self._render_post(post),
                 reply_markup=feedback_keyboard(post),
                 disable_web_page_preview=True,
             )
+            post.was_sent = True
+            await digest_repo.add_item(digest.id, post.id, rank)
+            await session.commit()
             rank += 1
         return len(posts)
 
