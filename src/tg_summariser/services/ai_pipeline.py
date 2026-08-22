@@ -26,10 +26,12 @@ class AIPipeline:
         prompt = (
             "You process Telegram channel posts for a personal digest.\n"
             "Return strict JSON with keys: language, summary, why_important, category, "
-            "importance_score, relevance_score, explanation.\n"
+            "importance_score, relevance_score, explanation, is_promotional.\n"
             "Use Russian for fields summary, why_important, explanation.\n"
             "Keep summary and why_important concise.\n"
             "Set scores from 0 to 1.\n"
+            "Set is_promotional=true for ads, sponsorships, sales pitches, event/course promotion, "
+            "affiliate content, or calls to buy/subscribe; otherwise false.\n"
             f"Post:\n{api_text}"
         )
 
@@ -54,6 +56,7 @@ class AIPipeline:
                 importance_score=float(parsed.get("importance_score", 0.5)),
                 relevance_score=float(parsed.get("relevance_score", 0.5)),
                 explanation=parsed.get("explanation", "Добавлен по базовой AI-оценке."),
+                is_promotional=self._as_bool(parsed.get("is_promotional", False)),
             )
         except (ValueError, TypeError, json.JSONDecodeError):
             return self._fallback(clean_text)
@@ -79,7 +82,14 @@ class AIPipeline:
             importance_score=0.55,
             relevance_score=0.6 if category == "AI & Agents" else 0.45,
             explanation=explanation,
+            is_promotional=False,
         )
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().casefold() in {"true", "1", "yes"}
 
     @staticmethod
     def _extract_text(response: Any) -> str:

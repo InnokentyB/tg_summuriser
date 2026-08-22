@@ -12,7 +12,7 @@ class FakeResponse:
     output_text = (
         '{"language":"ru","summary":"Саммари","why_important":"Важно",'
         '"category":"AI","importance_score":0.8,"relevance_score":0.7,'
-        '"explanation":"AI оценка"}'
+        '"explanation":"AI оценка","is_promotional":true}'
     )
 
 
@@ -75,6 +75,7 @@ async def test_ai_pipeline_trims_long_posts_before_api(monkeypatch) -> None:
     result = await pipeline.process_post("x" * 100)
 
     assert result.summary == "Саммари"
+    assert result.is_promotional is True
     assert "x" * 21 not in responses.inputs[0]
 
 

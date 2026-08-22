@@ -10,4 +10,4 @@ class ProcessedPost:
     importance_score: float
     relevance_score: float
     explanation: str
-
+    is_promotional: bool = False

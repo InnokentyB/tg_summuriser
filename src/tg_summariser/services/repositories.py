@@ -354,6 +354,7 @@ class PostRepository:
             .where(
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
+                Post.is_promotional.is_(False),
                 Post.importance_score >= settings.digest_min_importance_score,
                 Post.source_published_at >= freshness_cutoff,
             )
@@ -390,6 +391,7 @@ class PostRepository:
                 Post.channel_id == channel_id,
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
+                Post.is_promotional.is_(False),
                 Post.importance_score >= settings.digest_min_importance_score,
                 Post.source_published_at >= freshness_cutoff,
             )

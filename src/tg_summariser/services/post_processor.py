@@ -57,6 +57,7 @@ class PostProcessor:
             post.importance_score = ai_result.importance_score
             post.relevance_score = ai_result.relevance_score
             post.explanation = ai_result.explanation
+            post.is_promotional = getattr(ai_result, "is_promotional", False)
             post.duplicate_of_post_id = self.deduplicator.find_duplicate(post, existing_posts)
             if prefilter_decision.forced_status:
                 post.status = prefilter_decision.forced_status

@@ -714,11 +714,20 @@ async def test_top_candidates_exclude_old_low_importance_and_promotional_posts(d
         original_link="https://t.me/digest_filters/4",
         source_published_at=datetime.utcnow() - timedelta(hours=1),
     )
-    for post in (good, old, low_importance, promo):
+    native_ad, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=5,
+        raw_text="A partner presents its platform for modern teams",
+        normalized_text="A partner presents its platform for modern teams",
+        original_link="https://t.me/digest_filters/5",
+        source_published_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    for post in (good, old, low_importance, promo, native_ad):
         post.status = PostStatus.processed
         post.relevance_score = 0.9
         post.importance_score = 0.8
     low_importance.importance_score = 0.49
+    native_ad.is_promotional = True
 
     candidates = await repo.top_candidates()
 

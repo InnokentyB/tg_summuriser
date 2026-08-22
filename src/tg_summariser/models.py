@@ -100,6 +100,7 @@ class Post(Base):
     relevance_score: Mapped[float] = mapped_column(Float, default=0.0)
     duplicate_of_post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_promotional: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[PostStatus] = mapped_column(SqlEnum(PostStatus), default=PostStatus.pending)
     was_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     source_published_at: Mapped[datetime | None] = mapped_column(

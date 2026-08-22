@@ -19,6 +19,12 @@ async def init_db(engine: AsyncEngine) -> None:
             column_name="source_published_at",
             column_definition="TIMESTAMP",
         )
+        await _ensure_column(
+            conn,
+            table_name="posts",
+            column_name="is_promotional",
+            column_definition="BOOLEAN DEFAULT FALSE",
+        )
         if conn.dialect.name == "postgresql":
             await _upgrade_postgres_bigint_columns(conn)
             await _upgrade_postgres_text_columns(conn)
