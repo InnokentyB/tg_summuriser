@@ -10,6 +10,7 @@ from sqlalchemy import Integer, Select, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from tg_summariser.config import settings
 from tg_summariser.models import (
     Channel,
     ChannelOnboardingJob,
@@ -23,6 +24,7 @@ from tg_summariser.models import (
     UserFeedback,
 )
 from tg_summariser.services.dedup import Deduplicator
+from tg_summariser.services.prefilter import LocalPrefilter
 
 _URL_RE = re.compile(r"https?://[^\s<>()\"']+", re.IGNORECASE)
 _TRACKING_QUERY_PREFIXES = ("utm_",)
@@ -276,6 +278,7 @@ class PostRepository:
         raw_text: str,
         normalized_text: str,
         original_link: str | None,
+        source_published_at: datetime | None = None,
     ) -> tuple[Post, bool]:
         result = await self.session.execute(
             select(Post).where(
@@ -284,6 +287,8 @@ class PostRepository:
         )
         existing = result.scalars().first()
         if existing:
+            if source_published_at and existing.source_published_at is None:
+                existing.source_published_at = source_published_at
             return existing, False
 
         if original_link:
@@ -292,6 +297,8 @@ class PostRepository:
             )
             existing = result.scalars().first()
             if existing:
+                if source_published_at and existing.source_published_at is None:
+                    existing.source_published_at = source_published_at
                 return existing, False
 
         post = Post(
@@ -300,6 +307,7 @@ class PostRepository:
             raw_text=raw_text,
             normalized_text=normalized_text,
             original_link=original_link,
+            source_published_at=source_published_at,
         )
         self.session.add(post)
         await self.session.flush()
@@ -339,10 +347,16 @@ class PostRepository:
         limit: int | None = None,
         categories: list[str] | None = None,
     ) -> list[Post]:
+        freshness_cutoff = datetime.utcnow() - timedelta(days=settings.digest_max_post_age_days)
         stmt = (
             select(Post)
             .options(selectinload(Post.channel))
-            .where(Post.status == PostStatus.processed, Post.was_sent.is_(False))
+            .where(
+                Post.status == PostStatus.processed,
+                Post.was_sent.is_(False),
+                Post.importance_score >= settings.digest_min_importance_score,
+                Post.source_published_at >= freshness_cutoff,
+            )
         )
         if categories:
             stmt = stmt.where(Post.category.in_(categories))
@@ -368,6 +382,7 @@ class PostRepository:
         limit: int | None = None,
         categories: list[str] | None = None,
     ) -> list[Post]:
+        freshness_cutoff = datetime.utcnow() - timedelta(days=settings.digest_max_post_age_days)
         stmt = (
             select(Post)
             .options(selectinload(Post.channel))
@@ -375,6 +390,8 @@ class PostRepository:
                 Post.channel_id == channel_id,
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
+                Post.importance_score >= settings.digest_min_importance_score,
+                Post.source_published_at >= freshness_cutoff,
             )
         )
         if categories:
@@ -498,8 +515,11 @@ class PostRepository:
         seen_article_keys: set[str] = set(recent_article_keys or set())
         seen_vendor_keys: set[str] = set()
         deduplicator = Deduplicator()
+        prefilter = LocalPrefilter()
         reference_posts = list(excluded_posts or [])
         for post in posts:
+            if prefilter.is_promotional(post):
+                continue
             key = self._source_key(post)
             if key in seen_keys:
                 continue

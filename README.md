@@ -64,6 +64,8 @@ Optional:
 - `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `15`
 - `TELEGRAM_CHANNEL_SYNC_TIMEOUT_SECONDS` - max time spent on one Telegram channel, default `45`
 - `DIGEST_SCHEDULES`
+- `DIGEST_MAX_POST_AGE_DAYS` - maximum source-post age included in a digest, default `3`
+- `DIGEST_MIN_IMPORTANCE_SCORE` - minimum AI importance required for a digest, default `0.5`
 - `TIMEZONE`
 - `TGARTICLES_DATABASE_URL` - Postgres URL for importing article candidates from TGArticles
 - `TGARTICLES_IMPORT_ENABLED`

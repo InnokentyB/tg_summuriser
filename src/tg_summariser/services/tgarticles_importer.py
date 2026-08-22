@@ -154,6 +154,7 @@ class TGArticlesImportService:
                 raw_text=self._render_article(article),
                 normalized_text=normalized,
                 original_link=article.canonical_url or article.original_link,
+                source_published_at=self._naive_utc(article.published_at or article.created_at),
             )
             if created:
                 imported += 1
@@ -183,3 +184,11 @@ class TGArticlesImportService:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat()
+
+    @staticmethod
+    def _naive_utc(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)

@@ -102,6 +102,12 @@ class Post(Base):
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[PostStatus] = mapped_column(SqlEnum(PostStatus), default=PostStatus.pending)
     was_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_published_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

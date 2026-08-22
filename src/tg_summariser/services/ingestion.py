@@ -95,6 +95,7 @@ class IngestionService:
                 raw_text=item.text,
                 normalized_text=normalized,
                 original_link=item.link,
+                source_published_at=item.published_at,
             )
             if created:
                 ingested += 1

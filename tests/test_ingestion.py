@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 import pytest
 
@@ -58,6 +59,7 @@ async def test_ingestion_syncs_new_posts_only(db_session) -> None:
             message_id=1,
             text="First business post",
             link="https://t.me/businessbrain/1",
+            published_at=datetime(2026, 8, 20, 10, 0),
         ),
         TelegramChannelPost(
             channel_chat_id=321,
@@ -78,6 +80,8 @@ async def test_ingestion_syncs_new_posts_only(db_session) -> None:
     assert first_sync == 2
     assert second_sync == 0
     assert len(stored_posts) == 2
+    first_post = next(post for post in stored_posts if post.telegram_message_id == 1)
+    assert first_post.source_published_at == datetime(2026, 8, 20, 10, 0)
     assert service.tg_client.read_marks == [(321, 2), (321, 2)]
 
 

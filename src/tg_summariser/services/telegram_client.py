@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from tg_summariser.config import settings
@@ -14,6 +15,7 @@ class TelegramChannelPost:
     message_id: int
     text: str
     link: str | None
+    published_at: datetime | None = None
 
 
 class TelegramUserClient:
@@ -74,6 +76,7 @@ class TelegramUserClient:
                     message_id=message.id,
                     text=text,
                     link=link,
+                    published_at=message.date.astimezone(timezone.utc).replace(tzinfo=None),
                 )
             )
         return posts

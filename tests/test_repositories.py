@@ -310,6 +310,7 @@ async def test_top_candidates_for_channel_limits_results_to_single_source(db_ses
     )
     first_post.status = PostStatus.processed
     first_post.relevance_score = 0.9
+    first_post.importance_score = 0.8
 
     second_post, _ = await PostRepository(db_session).create_post(
         channel_id=second_channel.id,
@@ -320,6 +321,7 @@ async def test_top_candidates_for_channel_limits_results_to_single_source(db_ses
     )
     second_post.status = PostStatus.processed
     second_post.relevance_score = 0.95
+    second_post.importance_score = 0.8
 
     candidates = await PostRepository(db_session).top_candidates_for_channel(first_channel.id, limit=5)
 
@@ -350,6 +352,7 @@ async def test_top_candidates_skip_duplicate_rows_of_same_public_post(db_session
     )
     first_post.status = PostStatus.processed
     first_post.relevance_score = 0.9
+    first_post.importance_score = 0.8
 
     duplicate = first_post.__class__(
         channel_id=second_channel.id,
@@ -359,6 +362,7 @@ async def test_top_candidates_skip_duplicate_rows_of_same_public_post(db_session
         original_link="https://t.me/ai_product/2169",
         status=PostStatus.processed,
         relevance_score=0.85,
+        importance_score=0.8,
     )
     db_session.add(duplicate)
     await db_session.flush()
@@ -501,6 +505,7 @@ async def test_top_candidates_skip_same_article_for_seven_days(db_session) -> No
     )
     repeated_post.status = PostStatus.processed
     repeated_post.relevance_score = 0.95
+    repeated_post.importance_score = 0.8
 
     candidates = await PostRepository(db_session).top_candidates(limit=5)
 
@@ -542,6 +547,7 @@ async def test_top_candidates_allow_same_article_after_seven_days(db_session) ->
     )
     repeated_post.status = PostStatus.processed
     repeated_post.relevance_score = 0.95
+    repeated_post.importance_score = 0.8
 
     candidates = await PostRepository(db_session).top_candidates(limit=5)
 
@@ -565,6 +571,7 @@ async def test_top_candidates_limit_one_vendor_per_digest(db_session) -> None:
     )
     visure_first.status = PostStatus.processed
     visure_first.relevance_score = 0.95
+    visure_first.importance_score = 0.8
 
     visure_second, _ = await repo.create_post(
         channel_id=channel.id,
@@ -575,6 +582,7 @@ async def test_top_candidates_limit_one_vendor_per_digest(db_session) -> None:
     )
     visure_second.status = PostStatus.processed
     visure_second.relevance_score = 0.9
+    visure_second.importance_score = 0.8
 
     gitlab_post, _ = await repo.create_post(
         channel_id=channel.id,
@@ -585,6 +593,7 @@ async def test_top_candidates_limit_one_vendor_per_digest(db_session) -> None:
     )
     gitlab_post.status = PostStatus.processed
     gitlab_post.relevance_score = 0.85
+    gitlab_post.importance_score = 0.8
 
     candidates = await repo.top_candidates(limit=5)
 
@@ -608,6 +617,7 @@ async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     ai_post.status = PostStatus.processed
     ai_post.category = "AI tools"
     ai_post.relevance_score = 0.9
+    ai_post.importance_score = 0.8
 
     business_post, _ = await PostRepository(db_session).create_post(
         channel_id=channel.id,
@@ -619,6 +629,7 @@ async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     business_post.status = PostStatus.processed
     business_post.category = "Business"
     business_post.relevance_score = 0.8
+    business_post.importance_score = 0.8
 
     candidates = await PostRepository(db_session).top_candidates(limit=5, categories=["AI tools"])
 
@@ -654,11 +665,64 @@ async def test_top_candidates_have_no_default_count_limit(db_session) -> None:
         )
         post.status = PostStatus.processed
         post.relevance_score = 1 - message_id / 100
+        post.importance_score = 0.8
         created_posts.append(post)
 
     candidates = await repo.top_candidates()
 
     assert [post.id for post in candidates] == [post.id for post in created_posts]
+
+
+async def test_top_candidates_exclude_old_low_importance_and_promotional_posts(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=891,
+        title="Digest Filters",
+        telegram_username="digest_filters",
+        is_private=False,
+    )
+    repo = PostRepository(db_session)
+
+    good, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="Substantial product strategy analysis",
+        normalized_text="Substantial product strategy analysis",
+        original_link="https://t.me/digest_filters/1",
+        source_published_at=datetime.utcnow() - timedelta(hours=2),
+    )
+    old, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=2,
+        raw_text="Old but otherwise useful analysis",
+        normalized_text="Old but otherwise useful analysis",
+        original_link="https://t.me/digest_filters/2",
+        source_published_at=datetime.utcnow() - timedelta(days=10),
+    )
+    low_importance, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=3,
+        raw_text="Minor product update",
+        normalized_text="Minor product update",
+        original_link="https://t.me/digest_filters/3",
+        source_published_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    promo, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=4,
+        raw_text="OpenAI agents webinar with a promo discount",
+        normalized_text="OpenAI agents webinar with a promo discount",
+        original_link="https://t.me/digest_filters/4",
+        source_published_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    for post in (good, old, low_importance, promo):
+        post.status = PostStatus.processed
+        post.relevance_score = 0.9
+        post.importance_score = 0.8
+    low_importance.importance_score = 0.49
+
+    candidates = await repo.top_candidates()
+
+    assert candidates == [good]
 
 
 async def test_channel_status_counts_and_hidden_examples(db_session) -> None:

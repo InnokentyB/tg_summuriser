@@ -54,6 +54,7 @@ async def test_tgarticles_importer_creates_article_posts(db_session) -> None:
     assert posts[0].telegram_message_id == 101
     assert posts[0].status == PostStatus.pending
     assert posts[0].original_link == "https://example.com/ai-agents"
+    assert posts[0].source_published_at == datetime(2026, 8, 1, 10, 0)
     assert "Good article about AI agents" in posts[0].raw_text
     assert "Short useful summary" in posts[0].raw_text
 

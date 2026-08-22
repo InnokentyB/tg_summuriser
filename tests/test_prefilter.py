@@ -29,7 +29,7 @@ def test_prefilter_hides_promo_without_topic_signal(monkeypatch) -> None:
     assert decision.ai_result.category == "Filtered"
 
 
-def test_prefilter_allows_topic_signal_even_with_promo_marker(monkeypatch) -> None:
+def test_prefilter_hides_promo_even_with_topic_signal(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_prefilter_enabled", True)
     monkeypatch.setattr(settings, "ai_prefilter_strict", False)
     prefilter = LocalPrefilter()
@@ -39,7 +39,8 @@ def test_prefilter_allows_topic_signal_even_with_promo_marker(monkeypatch) -> No
         channel_affinity={},
     )
 
-    assert decision.should_call_ai is True
+    assert decision.should_call_ai is False
+    assert decision.forced_status == PostStatus.hidden
 
 
 def test_strict_prefilter_allows_trusted_channel_without_keywords(monkeypatch) -> None:

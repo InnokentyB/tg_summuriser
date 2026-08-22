@@ -43,10 +43,10 @@ class LocalPrefilter:
         if self._is_link_only(lowered, word_count):
             return self._hidden(text, "Локальный prefilter: пост похож на короткий link-only без контекста.")
 
-        if negative_matches and not positive_matches and not trusted_channel:
+        if negative_matches:
             return self._hidden(
                 text,
-                "Локальный prefilter: рекламные/промо-маркеры без тематических сигналов.",
+                "Локальный prefilter: обнаружены рекламные/промо-маркеры.",
             )
 
         if settings.ai_prefilter_strict and not positive_matches and not trusted_channel:
@@ -79,7 +79,21 @@ class LocalPrefilter:
 
     @staticmethod
     def _matches(text: str, keywords: list[str]) -> list[str]:
-        return [keyword for keyword in keywords if keyword in text]
+        words = set(_WORD_RE.findall(text.casefold()))
+        return [
+            keyword
+            for keyword in keywords
+            if (" " in keyword and keyword in text)
+            or any(word == keyword or len(keyword) >= 4 and word.startswith(keyword) for word in words)
+        ]
+
+    def is_promotional(self, post: Post) -> bool:
+        text = " ".join(
+            value
+            for value in (post.raw_text, post.summary, post.why_important, post.explanation)
+            if value
+        ).casefold()
+        return bool(self._matches(text, self.negative_keywords))
 
     @staticmethod
     def _is_link_only(text: str, word_count: int) -> bool:
