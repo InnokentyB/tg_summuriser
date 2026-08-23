@@ -56,9 +56,9 @@ Optional:
 - `OPENAI_MODEL`
 - `AI_PROCESSING_LIMIT_PER_RUN` - max pending posts sent through AI per run, default `20`
 - `AI_MIN_TEXT_LENGTH` - shorter posts use local fallback without API, default `120`
-- `AI_MAX_INPUT_CHARS` - max characters sent to OpenAI per post, default `4000`
+- `AI_MAX_INPUT_CHARS` - max characters sent to OpenAI per post, default `3000`
 - `AI_PREFILTER_ENABLED` - local zero-cost prefilter before OpenAI, default `true`
-- `AI_PREFILTER_STRICT` - hide posts without positive topic keywords unless the channel has positive feedback, default `false`
+- `AI_PREFILTER_STRICT` - hide posts without positive topic keywords unless the channel has positive feedback, default `true`
 - `AI_PREFILTER_POSITIVE_KEYWORDS` - comma-separated topic keywords for strict prefiltering
 - `AI_PREFILTER_NEGATIVE_KEYWORDS` - comma-separated promo/noise keywords hidden before OpenAI
 - `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `15`

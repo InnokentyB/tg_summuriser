@@ -28,6 +28,7 @@ class PostProcessor:
     async def process_pending(self, session: AsyncSession, user_id: int) -> int:
         post_repo = PostRepository(session)
         feedback_repo = FeedbackRepository(session)
+        await post_repo.hide_stale_pending(settings.digest_max_post_age_days)
         posts = await post_repo.pending_posts(limit=settings.ai_processing_limit_per_run)
         if not posts:
             return 0

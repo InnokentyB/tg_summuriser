@@ -342,6 +342,24 @@ class PostRepository:
         )
         return list(result.scalars())
 
+    async def hide_stale_pending(self, max_age_days: int) -> int:
+        freshness_cutoff = datetime.utcnow() - timedelta(days=max_age_days)
+        result = await self.session.execute(
+            update(Post)
+            .where(
+                Post.status == PostStatus.pending,
+                or_(
+                    Post.source_published_at.is_(None),
+                    Post.source_published_at < freshness_cutoff,
+                ),
+            )
+            .values(
+                status=PostStatus.hidden,
+                explanation="Скрыто до AI: публикация старше окна дайджеста или дата неизвестна.",
+            )
+        )
+        return result.rowcount or 0
+
     async def top_candidates(
         self,
         limit: int | None = None,

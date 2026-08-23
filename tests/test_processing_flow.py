@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from tg_summariser.models import PostStatus
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import ChannelRepository, PostRepository, UserRepository
@@ -109,3 +111,33 @@ async def test_post_processor_can_hide_post_before_ai(db_session) -> None:
     assert ai_pipeline.calls == 0
     assert post.status == PostStatus.hidden
     assert post.category == "Filtered"
+
+
+async def test_post_processor_hides_stale_posts_before_ai(db_session) -> None:
+    user = await UserRepository(db_session).get_or_create(telegram_id=3, username="owner")
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=9004,
+        title="Old News",
+        telegram_username="oldnews",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=101,
+        raw_text="An old post about AI agents",
+        normalized_text="An old post about AI agents",
+        original_link="https://t.me/oldnews/101",
+        source_published_at=datetime.utcnow() - timedelta(days=10),
+    )
+
+    ai_pipeline = FakeAIPipeline()
+    processor = PostProcessor(ai_pipeline, FakeDeduplicator(), FakeScorer())
+    processed = await processor.process_pending(db_session, user.id)
+    await db_session.refresh(post)
+
+    assert processed == 0
+    assert ai_pipeline.calls == 0
+    assert post.status == PostStatus.hidden
+    assert post.explanation == (
+        "Скрыто до AI: публикация старше окна дайджеста или дата неизвестна."
+    )

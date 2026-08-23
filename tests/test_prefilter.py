@@ -54,3 +54,17 @@ def test_strict_prefilter_allows_trusted_channel_without_keywords(monkeypatch) -
     )
 
     assert decision.should_call_ai is True
+
+
+def test_strict_prefilter_hides_untrusted_post_without_keywords(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_prefilter_enabled", True)
+    monkeypatch.setattr(settings, "ai_prefilter_strict", True)
+    prefilter = LocalPrefilter()
+
+    decision = prefilter.decide(
+        make_post("Длинный пост без явных тематических ключевых слов", channel_id=42),
+        channel_affinity={},
+    )
+
+    assert decision.should_call_ai is False
+    assert decision.forced_status == PostStatus.hidden

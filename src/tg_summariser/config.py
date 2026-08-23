@@ -11,12 +11,12 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite+aiosqlite:///./data/app.db", alias="DATABASE_URL")
     bot_token: str = Field(default="", alias="BOT_TOKEN")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")
     ai_processing_limit_per_run: int = Field(default=20, alias="AI_PROCESSING_LIMIT_PER_RUN")
     ai_min_text_length: int = Field(default=120, alias="AI_MIN_TEXT_LENGTH")
-    ai_max_input_chars: int = Field(default=4000, alias="AI_MAX_INPUT_CHARS")
+    ai_max_input_chars: int = Field(default=3000, alias="AI_MAX_INPUT_CHARS")
     ai_prefilter_enabled: bool = Field(default=True, alias="AI_PREFILTER_ENABLED")
-    ai_prefilter_strict: bool = Field(default=False, alias="AI_PREFILTER_STRICT")
+    ai_prefilter_strict: bool = Field(default=True, alias="AI_PREFILTER_STRICT")
     ai_prefilter_positive_keywords: str = Field(
         default=(
             "ai,ии,llm,gpt,openai,anthropic,claude,agent,agents,агент,агенты,"
