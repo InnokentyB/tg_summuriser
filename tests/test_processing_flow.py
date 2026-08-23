@@ -23,6 +23,9 @@ class FakeAIPipeline:
 
         return Result()
 
+    async def process_posts(self, posts):
+        return {post_id: await self.process_post(text) for post_id, text in posts}
+
 
 class FakeDeduplicator:
     def find_duplicate(self, post, existing_posts):

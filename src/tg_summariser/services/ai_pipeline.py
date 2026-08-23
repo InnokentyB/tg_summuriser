@@ -15,24 +15,45 @@ class AIPipeline:
         self.api_disabled_reason: str | None = None
 
     async def process_post(self, text: str) -> ProcessedPost:
-        clean_text = " ".join(text.split())
-        if not self.client or self.api_disabled_reason:
-            return self._fallback(clean_text)
-        if len(clean_text) < settings.ai_min_text_length:
-            return self._fallback(clean_text)
+        return (await self.process_posts([(0, text)]))[0]
 
-        api_text = self._trim_for_api(clean_text)
+    async def process_posts(self, posts: list[tuple[int, str]]) -> dict[int, ProcessedPost]:
+        results: dict[int, ProcessedPost] = {}
+        api_posts: list[tuple[int, str]] = []
+        clean_posts = {post_id: " ".join(text.split()) for post_id, text in posts}
 
+        for post_id, clean_text in clean_posts.items():
+            if (
+                not self.client
+                or self.api_disabled_reason
+                or len(clean_text) < settings.ai_min_text_length
+            ):
+                results[post_id] = self._fallback(clean_text)
+            else:
+                api_posts.append((post_id, self._trim_for_api(clean_text)))
+
+        for start in range(0, len(api_posts), max(settings.ai_batch_size, 1)):
+            batch = api_posts[start : start + max(settings.ai_batch_size, 1)]
+            results.update(await self._process_api_batch(batch, clean_posts))
+        return results
+
+    async def _process_api_batch(
+        self,
+        posts: list[tuple[int, str]],
+        clean_posts: dict[int, str],
+    ) -> dict[int, ProcessedPost]:
         prompt = (
             "You process Telegram channel posts for a personal digest.\n"
-            "Return strict JSON with keys: language, summary, why_important, category, "
-            "importance_score, relevance_score, explanation, is_promotional.\n"
+            "Return strict JSON object with a results array. Return exactly one result per input "
+            "post and preserve its integer id. Each result must contain: id, language, summary, "
+            "why_important, category, importance_score, relevance_score, explanation, "
+            "is_promotional.\n"
             "Use Russian for fields summary, why_important, explanation.\n"
             "Keep summary and why_important concise.\n"
             "Set scores from 0 to 1.\n"
             "Set is_promotional=true for ads, sponsorships, sales pitches, event/course promotion, "
             "affiliate content, or calls to buy/subscribe; otherwise false.\n"
-            f"Post:\n{api_text}"
+            f"Posts:\n{json.dumps([{'id': post_id, 'text': text} for post_id, text in posts], ensure_ascii=False)}"
         )
 
         try:
@@ -43,23 +64,43 @@ class AIPipeline:
         except RateLimitError as exc:
             if self._is_insufficient_quota(exc):
                 self.api_disabled_reason = "insufficient_quota"
-                return self._fallback(clean_text)
+                return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
             raise
         content = self._extract_text(response)
+        expected_ids = {post_id for post_id, _ in posts}
+        parsed_results: dict[int, ProcessedPost] = {}
         try:
             parsed = json.loads(content)
-            return ProcessedPost(
-                language=parsed.get("language", "unknown"),
-                summary=parsed.get("summary", clean_text[:180]),
-                why_important=parsed.get("why_important", "Может быть полезно для общего контекста."),
-                category=parsed.get("category", "General"),
-                importance_score=float(parsed.get("importance_score", 0.5)),
-                relevance_score=float(parsed.get("relevance_score", 0.5)),
-                explanation=parsed.get("explanation", "Добавлен по базовой AI-оценке."),
-                is_promotional=self._as_bool(parsed.get("is_promotional", False)),
-            )
-        except (ValueError, TypeError, json.JSONDecodeError):
-            return self._fallback(clean_text)
+            items = parsed.get("results", [])
+            if not isinstance(items, list):
+                raise TypeError("results must be a list")
+            for item in items:
+                try:
+                    post_id = int(item["id"])
+                    if post_id not in expected_ids or post_id in parsed_results:
+                        continue
+                    clean_text = clean_posts[post_id]
+                    parsed_results[post_id] = self._processed_post(item, clean_text)
+                except (KeyError, ValueError, TypeError):
+                    continue
+        except (AttributeError, ValueError, TypeError, json.JSONDecodeError):
+            parsed_results = {}
+
+        for post_id in expected_ids - parsed_results.keys():
+            parsed_results[post_id] = self._fallback(clean_posts[post_id])
+        return parsed_results
+
+    def _processed_post(self, parsed: dict[str, Any], clean_text: str) -> ProcessedPost:
+        return ProcessedPost(
+            language=parsed.get("language", "unknown"),
+            summary=parsed.get("summary", clean_text[:180]),
+            why_important=parsed.get("why_important", "Может быть полезно для общего контекста."),
+            category=parsed.get("category", "General"),
+            importance_score=float(parsed.get("importance_score", 0.5)),
+            relevance_score=float(parsed.get("relevance_score", 0.5)),
+            explanation=parsed.get("explanation", "Добавлен по базовой AI-оценке."),
+            is_promotional=self._as_bool(parsed.get("is_promotional", False)),
+        )
 
     def _trim_for_api(self, text: str) -> str:
         if len(text) <= settings.ai_max_input_chars:

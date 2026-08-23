@@ -55,6 +55,7 @@ Optional:
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `AI_PROCESSING_LIMIT_PER_RUN` - max pending posts sent through AI per run, default `20`
+- `AI_BATCH_SIZE` - posts classified in one OpenAI request, default `5`
 - `AI_MIN_TEXT_LENGTH` - shorter posts use local fallback without API, default `120`
 - `AI_MAX_INPUT_CHARS` - max characters sent to OpenAI per post, default `3000`
 - `AI_PREFILTER_ENABLED` - local zero-cost prefilter before OpenAI, default `true`

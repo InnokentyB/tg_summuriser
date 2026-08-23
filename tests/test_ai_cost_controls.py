@@ -10,9 +10,9 @@ from tg_summariser.services.repositories import ChannelRepository, PostRepositor
 
 class FakeResponse:
     output_text = (
-        '{"language":"ru","summary":"Саммари","why_important":"Важно",'
+        '{"results":[{"id":0,"language":"ru","summary":"Саммари","why_important":"Важно",'
         '"category":"AI","importance_score":0.8,"relevance_score":0.7,'
-        '"explanation":"AI оценка","is_promotional":true}'
+        '"explanation":"AI оценка","is_promotional":true}]}'
     )
 
 
@@ -92,6 +92,57 @@ async def test_ai_pipeline_falls_back_after_quota_exhaustion(monkeypatch) -> Non
     assert second.category == "AI & Agents"
     assert pipeline.api_disabled_reason == "insufficient_quota"
     assert len(responses.inputs) == 1
+
+
+async def test_ai_pipeline_processes_posts_in_batches_of_five(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+    monkeypatch.setattr(settings, "ai_batch_size", 5)
+
+    class BatchResponses(FakeResponses):
+        async def create(self, *, model: str, input: str):
+            self.inputs.append(input)
+            marker = input.split("Posts:\n", 1)[1]
+            posts = __import__("json").loads(marker)
+            results = [
+                {
+                    "id": post["id"],
+                    "language": "ru",
+                    "summary": f"Саммари {post['id']}",
+                    "why_important": "Важно",
+                    "category": "AI",
+                    "importance_score": 0.8,
+                    "relevance_score": 0.7,
+                    "explanation": "AI оценка",
+                    "is_promotional": False,
+                }
+                for post in posts
+            ]
+            response = FakeResponse()
+            response.output_text = __import__("json").dumps({"results": results})
+            return response
+
+    responses = BatchResponses()
+    pipeline = AIPipeline()
+    pipeline.client = FakeClient(responses)
+
+    results = await pipeline.process_posts([(post_id, "AI agents " * 20) for post_id in range(7)])
+
+    assert len(responses.inputs) == 2
+    assert set(results) == set(range(7))
+    assert results[6].summary == "Саммари 6"
+
+
+async def test_ai_pipeline_falls_back_for_missing_batch_result(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+    responses = FakeResponses()
+    pipeline = AIPipeline()
+    pipeline.client = FakeClient(responses)
+
+    results = await pipeline.process_posts([(0, "AI agents " * 20), (1, "Business update " * 20)])
+
+    assert len(responses.inputs) == 1
+    assert results[0].summary == "Саммари"
+    assert results[1].summary.startswith("Business update")
 
 
 async def test_post_processor_limits_ai_work_per_run(db_session, monkeypatch) -> None:

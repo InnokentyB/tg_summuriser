@@ -43,12 +43,21 @@ class PostProcessor:
             ).scalars()
         )
 
+        decisions = {
+            post.id: self.prefilter.decide(post, channel_affinity=channel_affinity)
+            for post in posts
+        }
+        ai_posts = [
+            (post.id, post.raw_text)
+            for post in posts
+            if decisions[post.id].should_call_ai
+        ]
+        ai_results = await self.ai_pipeline.process_posts(ai_posts) if ai_posts else {}
+
         processed = 0
         for post in posts:
-            prefilter_decision = self.prefilter.decide(post, channel_affinity=channel_affinity)
-            ai_result = prefilter_decision.ai_result
-            if prefilter_decision.should_call_ai:
-                ai_result = await self.ai_pipeline.process_post(post.raw_text)
+            prefilter_decision = decisions[post.id]
+            ai_result = ai_results.get(post.id, prefilter_decision.ai_result)
             if ai_result is None:
                 continue
             post.language = ai_result.language
