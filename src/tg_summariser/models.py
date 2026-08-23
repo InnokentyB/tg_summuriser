@@ -99,6 +99,9 @@ class Post(Base):
     importance_score: Mapped[float] = mapped_column(Float, default=0.0)
     relevance_score: Mapped[float] = mapped_column(Float, default=0.0)
     duplicate_of_post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
+    ai_batch_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_batch_jobs.id"), nullable=True, index=True
+    )
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_promotional: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[PostStatus] = mapped_column(SqlEnum(PostStatus), default=PostStatus.pending)
@@ -114,6 +117,20 @@ class Post(Base):
 
     channel: Mapped[Channel] = relationship(back_populates="posts")
     feedback_items: Mapped[list[UserFeedback]] = relationship(back_populates="post")
+
+
+class AIBatchJob(Base):
+    __tablename__ = "ai_batch_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    openai_batch_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    input_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="creating", index=True)
+    post_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class UserFeedback(Base):

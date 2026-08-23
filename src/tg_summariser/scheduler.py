@@ -11,6 +11,7 @@ from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
+from tg_summariser.services.openai_batch import OpenAIBatchService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import UserRepository
 from tg_summariser.services.scoring import RelevanceScorer
@@ -36,12 +37,18 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                 logger.warning("Scheduled article import skipped: OWNER_TELEGRAM_ID is not configured")
                 return
             user = await UserRepository(session).get_or_create(settings.owner_telegram_id)
+            batch_service = OpenAIBatchService()
+            collected = await batch_service.collect_completed(session, user.id)
             imported = await import_articles(session)
-            processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
-            processed = await processor.process_pending(session, user.id)
+            if settings.openai_batch_enabled:
+                processed = await batch_service.submit_pending(session, user.id)
+            else:
+                processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
+                processed = await processor.process_pending(session, user.id)
             logger.info(
-                "Scheduled article import finished: imported=%s processed=%s",
+                "Scheduled article import finished: imported=%s batch_collected=%s processed_or_queued=%s",
                 imported,
+                collected,
                 processed,
             )
 
@@ -53,13 +60,15 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                     logger.warning("Scheduled digest skipped: OWNER_TELEGRAM_ID is not configured")
                     return
                 user = await UserRepository(session).get_or_create(settings.owner_telegram_id)
+                batch_collected = await OpenAIBatchService().collect_completed(session, user.id)
                 synced = await IngestionService(tg_client).sync_channels(session)
                 imported = await import_articles(session)
                 processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
                 processed = await processor.process_pending(session, user.id)
                 sent = await DigestService(bot).send_digest(session, user.id, user.telegram_id)
                 logger.info(
-                    "Scheduled digest finished: synced=%s imported=%s processed=%s sent=%s",
+                    "Scheduled digest finished: batch_collected=%s synced=%s imported=%s processed=%s sent=%s",
+                    batch_collected,
                     synced,
                     imported,
                     processed,

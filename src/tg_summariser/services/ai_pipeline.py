@@ -42,7 +42,22 @@ class AIPipeline:
         posts: list[tuple[int, str]],
         clean_posts: dict[int, str],
     ) -> dict[int, ProcessedPost]:
-        prompt = (
+        prompt = self.build_prompt(posts)
+
+        try:
+            response = await self.client.responses.create(
+                model=settings.openai_model,
+                input=prompt,
+            )
+        except RateLimitError as exc:
+            if self._is_insufficient_quota(exc):
+                self.api_disabled_reason = "insufficient_quota"
+                return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
+            raise
+        return self.parse_results(self._extract_text(response), posts, clean_posts)
+
+    def build_prompt(self, posts: list[tuple[int, str]]) -> str:
+        return (
             "You process Telegram channel posts for a personal digest.\n"
             "Return strict JSON object with a results array. Return exactly one result per input "
             "post and preserve its integer id. Each result must contain: id, language, summary, "
@@ -56,17 +71,14 @@ class AIPipeline:
             f"Posts:\n{json.dumps([{'id': post_id, 'text': text} for post_id, text in posts], ensure_ascii=False)}"
         )
 
-        try:
-            response = await self.client.responses.create(
-                model=settings.openai_model,
-                input=prompt,
-            )
-        except RateLimitError as exc:
-            if self._is_insufficient_quota(exc):
-                self.api_disabled_reason = "insufficient_quota"
-                return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
-            raise
-        content = self._extract_text(response)
+    def parse_results(
+        self,
+        content: str,
+        posts: list[tuple[int, str]],
+        clean_posts: dict[int, str] | None = None,
+        fallback_missing: bool = True,
+    ) -> dict[int, ProcessedPost]:
+        clean_posts = clean_posts or {post_id: " ".join(text.split()) for post_id, text in posts}
         expected_ids = {post_id for post_id, _ in posts}
         parsed_results: dict[int, ProcessedPost] = {}
         try:
@@ -86,8 +98,9 @@ class AIPipeline:
         except (AttributeError, ValueError, TypeError, json.JSONDecodeError):
             parsed_results = {}
 
-        for post_id in expected_ids - parsed_results.keys():
-            parsed_results[post_id] = self._fallback(clean_posts[post_id])
+        if fallback_missing:
+            for post_id in expected_ids - parsed_results.keys():
+                parsed_results[post_id] = self._fallback(clean_posts[post_id])
         return parsed_results
 
     def _processed_post(self, parsed: dict[str, Any], clean_text: str) -> ProcessedPost:

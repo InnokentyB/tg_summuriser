@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")
     ai_processing_limit_per_run: int = Field(default=20, alias="AI_PROCESSING_LIMIT_PER_RUN")
     ai_batch_size: int = Field(default=5, alias="AI_BATCH_SIZE")
+    openai_batch_enabled: bool = Field(default=False, alias="OPENAI_BATCH_ENABLED")
+    openai_batch_post_limit: int = Field(default=100, alias="OPENAI_BATCH_POST_LIMIT")
     ai_min_text_length: int = Field(default=120, alias="AI_MIN_TEXT_LENGTH")
     ai_max_input_chars: int = Field(default=3000, alias="AI_MAX_INPUT_CHARS")
     ai_prefilter_enabled: bool = Field(default=True, alias="AI_PREFILTER_ENABLED")

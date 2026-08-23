@@ -17,6 +17,7 @@ from tg_summariser.services.channels import ChannelService, extract_channel_user
 from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQueue
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
+from tg_summariser.services.openai_batch import OpenAIBatchService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import (
     ChannelOnboardingJobRepository,
@@ -264,6 +265,7 @@ def register_handlers(
             user = await UserRepository(session).get_or_create(
                 message.from_user.id, message.from_user.username
             )
+            await OpenAIBatchService().collect_completed(session, user.id)
             synced = await ingestion_service.sync_channels(session)
             article_importer = TGArticlesImportService.from_settings()
             imported_articles = 0

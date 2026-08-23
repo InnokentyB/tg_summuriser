@@ -334,7 +334,11 @@ class PostRepository:
         return result.scalars().first()
 
     async def pending_posts(self, limit: int | None = None) -> list[Post]:
-        stmt = select(Post).where(Post.status == PostStatus.pending).order_by(Post.created_at.desc())
+        stmt = (
+            select(Post)
+            .where(Post.status == PostStatus.pending, Post.ai_batch_job_id.is_(None))
+            .order_by(Post.created_at.desc())
+        )
         if limit is not None:
             stmt = stmt.limit(limit)
         result = await self.session.execute(
