@@ -150,7 +150,10 @@ class Deduplicator:
         }
 
     def _comparison_texts(self, post: Post) -> list[str]:
-        values = [post.normalized_text, post.summary or "", post.why_important or ""]
+        if post.summary or post.why_important:
+            values = [post.summary or "", post.why_important or ""]
+        else:
+            values = [post.normalized_text]
         return [value for value in values if value.strip()]
 
     def _text_similarity(self, left: str, right: str) -> float:

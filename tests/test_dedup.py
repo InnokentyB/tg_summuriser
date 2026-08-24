@@ -162,3 +162,14 @@ def test_find_duplicate_matches_same_arxiv_paper_version() -> None:
     duplicate_id = dedup.find_duplicate(current, existing)
 
     assert duplicate_id == 1
+
+
+def test_arxiv_comparison_uses_concise_ai_fields() -> None:
+    dedup = Deduplicator()
+    post = make_post(1, "[2608.20653] " + "long abstract text " * 500)
+    post.summary = "Короткое саммари исследования"
+    post.why_important = "Короткое объяснение"
+
+    comparison_texts = dedup._comparison_texts(post)
+
+    assert comparison_texts == [post.summary, post.why_important]
