@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     app_env: str = Field(default="development", alias="APP_ENV")
     database_url: str = Field(default="sqlite+aiosqlite:///./data/app.db", alias="DATABASE_URL")
+    database_pool_size: int = Field(default=2, ge=1, alias="DB_POOL_SIZE")
+    database_max_overflow: int = Field(default=2, ge=0, alias="DB_MAX_OVERFLOW")
     bot_token: str = Field(default="", alias="BOT_TOKEN")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")

@@ -52,6 +52,8 @@ Required:
 
 Optional:
 
+- `DB_POOL_SIZE` - persistent Postgres connections, default `2`
+- `DB_MAX_OVERFLOW` - temporary connections allowed above the pool, default `2`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `AI_PROCESSING_LIMIT_PER_RUN` - max pending posts sent through AI per run, default `20`

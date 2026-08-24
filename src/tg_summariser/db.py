@@ -16,7 +16,22 @@ def _ensure_sqlite_parent(url: str) -> None:
 
 
 _ensure_sqlite_parent(settings.normalized_database_url)
-engine = create_async_engine(settings.normalized_database_url, future=True)
+
+
+def _engine_options(url: str) -> dict:
+    options = {"future": True}
+    if url.startswith(("postgresql+asyncpg://", "postgresql://", "postgres://")):
+        options.update(
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+        )
+    return options
+
+
+engine = create_async_engine(
+    settings.normalized_database_url,
+    **_engine_options(settings.normalized_database_url),
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
