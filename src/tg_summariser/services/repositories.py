@@ -30,6 +30,7 @@ _URL_RE = re.compile(r"https?://[^\s<>()\"']+", re.IGNORECASE)
 _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_PARAMS = {"fbclid", "gclid", "yclid"}
 _TELEGRAM_HOSTS = {"t.me", "telegram.me", "telegram.dog"}
+_NON_VENDOR_DOMAINS = {"arxiv.org"}
 _KNOWN_VENDOR_PATTERNS = (
     ("visure", re.compile(r"\bvisure(?:\s+solutions)?\b", re.IGNORECASE)),
     ("netflix", re.compile(r"\bnetflix\b", re.IGNORECASE)),
@@ -592,7 +593,9 @@ class PostRepository:
         for url in cls._external_urls(post):
             host = urlsplit(url).hostname or ""
             if host:
-                return f"domain:{cls._registrable_domain(host)}"
+                domain = cls._registrable_domain(host)
+                if domain not in _NON_VENDOR_DOMAINS:
+                    return f"domain:{domain}"
         return None
 
     @classmethod

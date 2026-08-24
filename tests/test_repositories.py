@@ -600,6 +600,41 @@ async def test_top_candidates_limit_one_vendor_per_digest(db_session) -> None:
     assert [post.id for post in candidates] == [visure_first.id, gitlab_post.id]
 
 
+async def test_top_candidates_do_not_treat_arxiv_as_single_vendor(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=783,
+        title="Research Reader",
+        telegram_username="research_reader",
+        is_private=False,
+    )
+    repo = PostRepository(db_session)
+    first, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=620,
+        raw_text="[2608.20653] Research about dairy clustering https://arxiv.org/abs/2608.20653",
+        normalized_text="[2608.20653] Research about dairy clustering",
+        original_link="https://t.me/research_reader/620",
+    )
+    first.status = PostStatus.processed
+    first.relevance_score = 0.95
+    first.importance_score = 0.8
+
+    second, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=621,
+        raw_text="[2608.20638] Research about Adam stability https://arxiv.org/abs/2608.20638",
+        normalized_text="[2608.20638] Research about Adam stability",
+        original_link="https://t.me/research_reader/621",
+    )
+    second.status = PostStatus.processed
+    second.relevance_score = 0.9
+    second.importance_score = 0.8
+
+    candidates = await repo.top_candidates(limit=5)
+
+    assert [post.id for post in candidates] == [first.id, second.id]
+
+
 async def test_top_candidates_can_be_filtered_by_categories(db_session) -> None:
     channel = await ChannelRepository(db_session).upsert_channel(
         telegram_chat_id=888,
