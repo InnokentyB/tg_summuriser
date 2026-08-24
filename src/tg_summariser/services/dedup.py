@@ -8,6 +8,7 @@ from tg_summariser.models import Post
 
 _TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 _URL_RE = re.compile(r"https?://\S+|t\.me/\S+", re.IGNORECASE)
+_ARXIV_ID_RE = re.compile(r"(?<!\d)(\d{4}\.\d{4,5})(?:v\d+)?(?!\d)", re.IGNORECASE)
 
 _STOPWORDS = {
     "about",
@@ -125,6 +126,13 @@ class Deduplicator:
         return None
 
     def _is_duplicate(self, post: Post, candidate: Post) -> bool:
+        post_document_ids = self._document_ids(post)
+        candidate_document_ids = self._document_ids(candidate)
+        if (
+            post_document_ids
+            and candidate_document_ids
+        ):
+            return not post_document_ids.isdisjoint(candidate_document_ids)
         for current_text in self._comparison_texts(post):
             for candidate_text in self._comparison_texts(candidate):
                 if self._text_similarity(current_text, candidate_text) >= 0.92:
@@ -132,6 +140,14 @@ class Deduplicator:
                 if self._token_similarity(current_text, candidate_text):
                     return True
         return self._same_news_event(post, candidate)
+
+    def _document_ids(self, post: Post) -> set[str]:
+        values = (post.raw_text, post.normalized_text, post.original_link or "")
+        return {
+            match.group(1).casefold()
+            for value in values
+            for match in _ARXIV_ID_RE.finditer(value)
+        }
 
     def _comparison_texts(self, post: Post) -> list[str]:
         values = [post.normalized_text, post.summary or "", post.why_important or ""]

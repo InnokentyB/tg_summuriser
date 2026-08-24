@@ -132,3 +132,33 @@ def test_find_duplicate_keeps_related_but_different_news_separate() -> None:
     duplicate_id = dedup.find_duplicate(current, existing)
 
     assert duplicate_id is None
+
+
+def test_find_duplicate_keeps_distinct_arxiv_papers_separate() -> None:
+    dedup = Deduplicator()
+    current = make_post(
+        2,
+        "Title: [2608.20653] Meta-clustering of milk spectra Source: arXiv cs.LG "
+        "Abstract: This machine learning study evaluates clustering methods and model results.",
+    )
+    existing = [
+        make_post(
+            1,
+            "Title: [2608.04060] SJEPA latent dynamics Source: arXiv cs.LG "
+            "Abstract: This machine learning study evaluates predictive methods and model results.",
+        )
+    ]
+
+    duplicate_id = dedup.find_duplicate(current, existing)
+
+    assert duplicate_id is None
+
+
+def test_find_duplicate_matches_same_arxiv_paper_version() -> None:
+    dedup = Deduplicator()
+    current = make_post(2, "arXiv:2608.20653v2 updated abstract for clustering research")
+    existing = [make_post(1, "[2608.20653] original abstract for clustering research")]
+
+    duplicate_id = dedup.find_duplicate(current, existing)
+
+    assert duplicate_id == 1
