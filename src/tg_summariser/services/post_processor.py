@@ -8,6 +8,7 @@ from tg_summariser.models import Post, PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.prefilter import LocalPrefilter
+from tg_summariser.services.product_radar import serialize_product_matches
 from tg_summariser.services.repositories import FeedbackRepository, PostRepository
 from tg_summariser.services.scoring import RelevanceScorer
 
@@ -68,6 +69,9 @@ class PostProcessor:
             post.relevance_score = ai_result.relevance_score
             post.explanation = ai_result.explanation
             post.is_promotional = getattr(ai_result, "is_promotional", False)
+            post.product_matches_json = serialize_product_matches(
+                getattr(ai_result, "product_matches", [])
+            )
             post.duplicate_of_post_id = self.deduplicator.find_duplicate(post, existing_posts)
             if prefilter_decision.forced_status:
                 post.status = prefilter_decision.forced_status

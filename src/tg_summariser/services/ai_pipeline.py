@@ -6,7 +6,17 @@ from typing import Any
 from openai import AsyncOpenAI, RateLimitError
 
 from tg_summariser.config import settings
-from tg_summariser.schemas import ProcessedPost
+from tg_summariser.schemas import ProcessedPost, ProductMatch
+
+_PRODUCT_PROFILES = (
+    "Product fit profiles:\n"
+    "- Контент-завод: AI-assisted content production, editorial quality gates, content reuse, "
+    "multi-channel adaptation, distribution automation, and content analytics.\n"
+    "- Seturon: decision-first adaptive learning, L&D and enablement, onboarding, role-aware "
+    "learning paths, course authoring, and reducing time-to-competency.\n"
+    "- Подмастерье аналитика: source-grounded business/system analysis, requirements, "
+    "traceability, contradiction and risk detection, deterministic evals, and reliable agents.\n"
+)
 
 
 class AIPipeline:
@@ -62,7 +72,11 @@ class AIPipeline:
             "Return strict JSON object with a results array. Return exactly one result per input "
             "post and preserve its integer id. Each result must contain: id, language, summary, "
             "why_important, category, importance_score, relevance_score, explanation, "
-            "is_promotional.\n"
+            "is_promotional, product_matches.\n"
+            "product_matches must be an array containing only genuinely useful matches. Each "
+            "match must contain product, score (0 to 1), why_useful, suggested_use. Use the exact "
+            "product names from the profiles. Return [] when there is no concrete product use.\n"
+            f"{_PRODUCT_PROFILES}"
             "Use Russian for fields summary, why_important, explanation.\n"
             "Keep summary and why_important concise.\n"
             "Set scores from 0 to 1.\n"
@@ -113,7 +127,31 @@ class AIPipeline:
             relevance_score=float(parsed.get("relevance_score", 0.5)),
             explanation=parsed.get("explanation", "Добавлен по базовой AI-оценке."),
             is_promotional=self._as_bool(parsed.get("is_promotional", False)),
+            product_matches=self._product_matches(parsed.get("product_matches", [])),
         )
+
+    @staticmethod
+    def _product_matches(value: Any) -> list[ProductMatch]:
+        if not isinstance(value, list):
+            return []
+        allowed_products = {"Контент-завод", "Seturon", "Подмастерье аналитика"}
+        matches = []
+        for item in value:
+            if not isinstance(item, dict) or item.get("product") not in allowed_products:
+                continue
+            try:
+                score = max(0.0, min(float(item.get("score", 0)), 1.0))
+            except (TypeError, ValueError):
+                continue
+            matches.append(
+                ProductMatch(
+                    product=item["product"],
+                    score=score,
+                    why_useful=str(item.get("why_useful", "")).strip(),
+                    suggested_use=str(item.get("suggested_use", "")).strip(),
+                )
+            )
+        return matches
 
     def _trim_for_api(self, text: str) -> str:
         if len(text) <= settings.ai_max_input_chars:

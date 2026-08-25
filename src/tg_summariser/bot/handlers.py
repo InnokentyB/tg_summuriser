@@ -18,6 +18,7 @@ from tg_summariser.services.channel_onboarding_queue import ChannelOnboardingQue
 from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.openai_batch import OpenAIBatchService
+from tg_summariser.services.product_radar import ProductRadarService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import (
     ChannelOnboardingJobRepository,
@@ -274,12 +275,16 @@ def register_handlers(
             processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
             processed = await processor.process_pending(session, user.id)
             sent = await DigestService(message.bot).send_digest(session, user.id, message.from_user.id)
+            product_sent = await ProductRadarService(message.bot).send_review(
+                session, message.from_user.id
+            )
         await message.answer(
             f"Дайджест собран.\n"
             f"Новых постов синхронизировано: {synced}\n"
             f"Новых статей импортировано: {imported_articles}\n"
             f"Обработано AI: {processed}\n"
             f"Отправлено в дайджест: {sent}"
+            f"\nОтправлено в продуктовый радар: {product_sent}"
         )
 
     @router.message(Command("process_channels"))

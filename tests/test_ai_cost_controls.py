@@ -79,6 +79,28 @@ async def test_ai_pipeline_trims_long_posts_before_api(monkeypatch) -> None:
     assert "x" * 21 not in responses.inputs[0]
 
 
+def test_ai_pipeline_parses_product_matches() -> None:
+    pipeline = AIPipeline()
+    result = pipeline._processed_post(
+        {
+            "product_matches": [
+                {
+                    "product": "Seturon",
+                    "score": 0.82,
+                    "why_useful": "Про адаптивное обучение",
+                    "suggested_use": "Проверить onboarding use case",
+                },
+                {"product": "Unknown", "score": 1},
+            ]
+        },
+        "Source text",
+    )
+
+    assert len(result.product_matches) == 1
+    assert result.product_matches[0].product == "Seturon"
+    assert result.product_matches[0].score == 0.82
+
+
 async def test_ai_pipeline_falls_back_after_quota_exhaustion(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_min_text_length", 1)
     responses = FakeResponses(error=_quota_error())

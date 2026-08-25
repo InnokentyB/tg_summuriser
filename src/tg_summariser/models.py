@@ -104,6 +104,8 @@ class Post(Base):
     )
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_promotional: Mapped[bool] = mapped_column(Boolean, default=False)
+    product_matches_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    product_review_sent: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     status: Mapped[PostStatus] = mapped_column(SqlEnum(PostStatus), default=PostStatus.pending)
     was_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     source_published_at: Mapped[datetime | None] = mapped_column(

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     ai_batch_size: int = Field(default=5, alias="AI_BATCH_SIZE")
     openai_batch_enabled: bool = Field(default=False, alias="OPENAI_BATCH_ENABLED")
     openai_batch_post_limit: int = Field(default=100, alias="OPENAI_BATCH_POST_LIMIT")
+    product_radar_enabled: bool = Field(default=True, alias="PRODUCT_RADAR_ENABLED")
+    product_radar_min_score: float = Field(default=0.65, alias="PRODUCT_RADAR_MIN_SCORE")
     ai_min_text_length: int = Field(default=120, alias="AI_MIN_TEXT_LENGTH")
     ai_max_input_chars: int = Field(default=3000, alias="AI_MAX_INPUT_CHARS")
     ai_prefilter_enabled: bool = Field(default=True, alias="AI_PREFILTER_ENABLED")

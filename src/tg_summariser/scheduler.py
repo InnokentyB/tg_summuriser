@@ -13,6 +13,7 @@ from tg_summariser.services.digest_service import DigestService
 from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.openai_batch import OpenAIBatchService
 from tg_summariser.services.post_processor import PostProcessor
+from tg_summariser.services.product_radar import ProductRadarService
 from tg_summariser.services.repositories import UserRepository
 from tg_summariser.services.scoring import RelevanceScorer
 from tg_summariser.services.telegram_client import TelegramUserClient
@@ -66,13 +67,17 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                 processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
                 processed = await processor.process_pending(session, user.id)
                 sent = await DigestService(bot).send_digest(session, user.id, user.telegram_id)
+                product_sent = await ProductRadarService(bot).send_review(
+                    session, user.telegram_id
+                )
                 logger.info(
-                    "Scheduled digest finished: batch_collected=%s synced=%s imported=%s processed=%s sent=%s",
+                    "Scheduled digest finished: batch_collected=%s synced=%s imported=%s processed=%s sent=%s product_sent=%s",
                     batch_collected,
                     synced,
                     imported,
                     processed,
                     sent,
+                    product_sent,
                 )
         except Exception as exc:
             logger.exception("Scheduled digest failed")

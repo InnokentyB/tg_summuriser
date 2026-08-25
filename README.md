@@ -60,6 +60,8 @@ Optional:
 - `AI_BATCH_SIZE` - posts classified in one OpenAI request, default `5`
 - `OPENAI_BATCH_ENABLED` - use discounted asynchronous Batch API for background article imports
 - `OPENAI_BATCH_POST_LIMIT` - max posts submitted in one Batch API job, default `100`
+- `PRODUCT_RADAR_ENABLED` - send a separate review block for product-relevant posts, default `true`
+- `PRODUCT_RADAR_MIN_SCORE` - minimum product-fit score for the product radar, default `0.65`
 - `AI_MIN_TEXT_LENGTH` - shorter posts use local fallback without API, default `120`
 - `AI_MAX_INPUT_CHARS` - max characters sent to OpenAI per post, default `3000`
 - `AI_PREFILTER_ENABLED` - local zero-cost prefilter before OpenAI, default `true`

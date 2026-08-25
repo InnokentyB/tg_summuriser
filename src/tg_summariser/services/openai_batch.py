@@ -13,6 +13,7 @@ from tg_summariser.models import AIBatchJob, Post, PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.prefilter import LocalPrefilter
+from tg_summariser.services.product_radar import serialize_product_matches
 from tg_summariser.services.repositories import FeedbackRepository, PostRepository
 from tg_summariser.services.scoring import RelevanceScorer
 
@@ -196,6 +197,9 @@ class OpenAIBatchService:
         post.relevance_score = result.relevance_score
         post.explanation = result.explanation
         post.is_promotional = result.is_promotional
+        post.product_matches_json = serialize_product_matches(
+            getattr(result, "product_matches", [])
+        )
 
     @staticmethod
     def _response_output_text(body: dict[str, Any]) -> str:
