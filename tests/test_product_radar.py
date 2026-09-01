@@ -87,3 +87,30 @@ async def test_product_radar_ignores_matches_below_threshold(db_session, monkeyp
     assert sent == 0
     assert bot.messages == []
     assert post.product_review_sent is False
+
+
+async def test_product_radar_ignores_post_without_actionable_link(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "product_radar_enabled", True)
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=9102,
+        title="Newsletter",
+        telegram_username=None,
+        is_private=True,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="A useful fragment without its source link",
+        normalized_text="useful fragment without source",
+        original_link=None,
+    )
+    post.status = PostStatus.processed
+    post.product_matches_json = serialize_product_matches(
+        [ProductMatch("Контент-завод", 0.9, "Полезный кейс", "Изучить")]
+    )
+    bot = FakeBot()
+
+    sent = await ProductRadarService(bot).send_review(db_session, telegram_id=123)
+
+    assert sent == 0
+    assert bot.messages == []

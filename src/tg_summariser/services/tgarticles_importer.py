@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 from typing import Protocol
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
 from tg_summariser.services.repositories import ChannelRepository, PostRepository
+
+_URL_RE = re.compile(r"https?://[^\s<>()\"']+", re.IGNORECASE)
+_REDIRECT_PARAMS = ("url", "u", "target", "redirect", "redirect_url")
+_SOCIAL_PROFILE_HOSTS = {"x.com", "twitter.com", "www.x.com", "www.twitter.com"}
 
 
 @dataclass(slots=True)
@@ -147,13 +153,14 @@ class TGArticlesImportService:
 
         imported = 0
         for article in articles:
+            article_link = self._resolve_article_link(article)
             normalized = " ".join(self._render_article(article).split())
             _, created = await post_repo.create_post(
                 channel_id=channel.id,
                 telegram_message_id=article.article_id,
                 raw_text=self._render_article(article),
                 normalized_text=normalized,
-                original_link=article.canonical_url or article.original_link,
+                original_link=article_link,
                 source_published_at=self._naive_utc(article.published_at or article.created_at),
             )
             if created:
@@ -172,12 +179,56 @@ class TGArticlesImportService:
             parts.append(f"Published: {self._format_datetime(published)}")
         if article.summary:
             parts.append(f"Summary: {article.summary}")
-        link = article.canonical_url or article.original_link
+        link = self._resolve_article_link(article)
         if link:
             parts.append(f"Link: {link}")
         parts.append("")
         parts.append(article.text)
         return "\n".join(parts)
+
+    @classmethod
+    def _resolve_article_link(cls, article: TGArticleCandidate) -> str | None:
+        candidates = [article.canonical_url, article.original_link]
+        candidates.extend(_URL_RE.findall(article.text))
+        for candidate in candidates:
+            resolved = cls._unwrap_redirect(candidate)
+            if resolved and cls._is_actionable_link(resolved):
+                return resolved
+        return None
+
+    @classmethod
+    def _unwrap_redirect(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        current = value.rstrip(".,;:!?)\"]}")
+        for _ in range(3):
+            parsed = urlsplit(current)
+            query = parse_qs(parsed.query)
+            target = next(
+                (
+                    query[param][0]
+                    for param in _REDIRECT_PARAMS
+                    if query.get(param) and query[param][0].startswith(("http://", "https://"))
+                ),
+                None,
+            )
+            if not target:
+                break
+            current = unquote(target)
+        return current
+
+    @staticmethod
+    def _is_actionable_link(value: str) -> bool:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return False
+        host = parsed.hostname.casefold()
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if host in _SOCIAL_PROFILE_HOSTS:
+            return len(path_parts) >= 3 and path_parts[1] == "status"
+        if host == "dev.to" and parsed.path.startswith("/ahoy/click"):
+            return False
+        return True
 
     @staticmethod
     def _format_datetime(value: datetime) -> str:

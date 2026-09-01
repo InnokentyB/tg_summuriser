@@ -76,6 +76,8 @@ class AIPipeline:
             "product_matches must be an array containing only genuinely useful matches. Each "
             "match must contain product, score (0 to 1), why_useful, suggested_use. Use the exact "
             "product names from the profiles. Return [] when there is no concrete product use.\n"
+            "For newsletter roundups, return a product match only when the relevant item has a "
+            "direct actionable source link; a newsletter, tracking, or social-profile link is not enough.\n"
             f"{_PRODUCT_PROFILES}"
             "Use Russian for fields summary, why_important, explanation.\n"
             "Keep summary and why_important concise.\n"

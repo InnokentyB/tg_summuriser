@@ -64,6 +64,7 @@ class ProductRadarService:
                 Post.is_promotional.is_(False),
                 Post.product_review_sent.is_(False),
                 Post.product_matches_json.is_not(None),
+                Post.original_link.is_not(None),
             )
             .order_by(Post.relevance_score.desc(), Post.importance_score.desc())
         )

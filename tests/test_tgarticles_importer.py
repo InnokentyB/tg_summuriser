@@ -94,3 +94,39 @@ async def test_tgarticles_importer_accepts_links_longer_than_500_characters(db_s
 
     assert imported == 1
     assert posts[0].original_link == long_link
+
+
+async def test_tgarticles_importer_unwraps_tracking_link(db_session) -> None:
+    article = TGArticleCandidate(
+        article_id=103,
+        title="Article behind DEV tracking",
+        text="Useful article text " * 80,
+        canonical_url=(
+            "https://dev.to/ahoy/click?s=token&u="
+            "https%3A%2F%2Fdev.to%2Fauthor%2Fuseful-article-123"
+        ),
+    )
+    service = TGArticlesImportService(FakeTGArticlesSource([article]), source_chat_id=910000099)
+
+    await service.import_recent(db_session)
+    posts = await PostRepository(db_session).pending_posts()
+
+    assert posts[0].original_link == "https://dev.to/author/useful-article-123"
+
+
+async def test_tgarticles_importer_rejects_tracking_link_to_social_profile(db_session) -> None:
+    article = TGArticleCandidate(
+        article_id=104,
+        title="Newsletter roundup without direct article links",
+        text="Several useful notes without source URLs " * 80,
+        canonical_url=(
+            "https://dev.to/ahoy/click?s=token&u="
+            "https%3A%2F%2Fx.com%2Fthepracticaldev"
+        ),
+    )
+    service = TGArticlesImportService(FakeTGArticlesSource([article]), source_chat_id=910000099)
+
+    await service.import_recent(db_session)
+    posts = await PostRepository(db_session).pending_posts()
+
+    assert posts[0].original_link is None
