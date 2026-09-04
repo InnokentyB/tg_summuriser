@@ -169,7 +169,7 @@ class OpenAIBatchService:
         applied = 0
         for post in posts:
             ai_result = ai_results.get(post.id)
-            if not ai_result:
+            if not ai_result or self.pipeline._has_ukrainian_output(ai_result):
                 post.ai_batch_job_id = None
                 continue
             self._apply_ai_result(post, ai_result)

@@ -167,6 +167,33 @@ async def test_ai_pipeline_falls_back_for_missing_batch_result(monkeypatch) -> N
     assert results[1].summary.startswith("Business update")
 
 
+async def test_ai_pipeline_retries_ukrainian_generated_text_in_russian(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+
+    class LanguageResponses(FakeResponses):
+        async def create(self, *, model: str, input: str):
+            self.inputs.append(input)
+            response = FakeResponse()
+            if len(self.inputs) == 1:
+                response.output_text = (
+                    '{"results":[{"id":0,"language":"uk","summary":"Аналіз вимог охоплює їх '
+                    'перевірку та узгодження","why_important":"Це покращує якість",'
+                    '"category":"Анализ","importance_score":0.8,"relevance_score":0.8,'
+                    '"explanation":"Корисний матеріал","is_promotional":false}]}'
+                )
+            return response
+
+    responses = LanguageResponses()
+    pipeline = AIPipeline()
+    pipeline.client = FakeClient(responses)
+
+    result = await pipeline.process_post("Українська стаття про аналіз вимог " * 20)
+
+    assert result.summary == "Саммари"
+    assert len(responses.inputs) == 2
+    assert "Russian only" in responses.inputs[1]
+
+
 async def test_post_processor_limits_ai_work_per_run(db_session, monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_processing_limit_per_run", 1)
     user = await UserRepository(db_session).get_or_create(telegram_id=1, username="owner")

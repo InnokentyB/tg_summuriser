@@ -124,6 +124,44 @@ async def test_completed_batch_applies_results(db_session, monkeypatch) -> None:
     assert posts[0].summary == f"Саммари {posts[0].id}"
 
 
+async def test_completed_batch_releases_ukrainian_output(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "openai_batch_enabled", True)
+    user, posts = await _create_posts(db_session, 1)
+    client = FakeClient()
+    service = OpenAIBatchService(client)
+    await service.submit_pending(db_session, user.id)
+    result = {
+        "id": posts[0].id,
+        "language": "uk",
+        "summary": "Аналіз вимог охоплює їх перевірку",
+        "why_important": "Це покращує якість",
+        "category": "Анализ",
+        "importance_score": 0.8,
+        "relevance_score": 0.8,
+        "explanation": "Корисний матеріал",
+        "is_promotional": False,
+    }
+    body = {
+        "output": [
+            {
+                "content": [
+                    {"type": "output_text", "text": json.dumps({"results": [result]})}
+                ]
+            }
+        ]
+    }
+    client.files.output = json.dumps(
+        {"custom_id": "posts", "response": {"status_code": 200, "body": body}}
+    )
+    client.batches.status = "completed"
+
+    applied = await service.collect_completed(db_session, user.id)
+
+    assert applied == 0
+    assert posts[0].ai_batch_job_id is None
+    assert posts[0].status == PostStatus.pending
+
+
 async def test_failed_batch_releases_posts_for_fast_processing(db_session, monkeypatch) -> None:
     monkeypatch.setattr(settings, "openai_batch_enabled", True)
     user, posts = await _create_posts(db_session, 1)

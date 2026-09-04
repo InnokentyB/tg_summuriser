@@ -64,7 +64,51 @@ class AIPipeline:
                 self.api_disabled_reason = "insufficient_quota"
                 return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
             raise
-        return self.parse_results(self._extract_text(response), posts, clean_posts)
+        results = self.parse_results(
+            self._extract_text(response),
+            posts,
+            clean_posts,
+            fallback_missing=False,
+        )
+        invalid_ids = [
+            post_id for post_id, result in results.items() if self._has_ukrainian_output(result)
+        ]
+        for post_id in invalid_ids:
+            del results[post_id]
+
+        if invalid_ids:
+            retry_posts = [(post_id, dict(posts)[post_id]) for post_id in invalid_ids]
+            retry_prompt = (
+                self.build_prompt(retry_posts)
+                + "\nCRITICAL CORRECTION: The previous answer used Ukrainian. Generate all user-facing "
+                "fields in Russian only. Translate the source; do not copy its language."
+            )
+            retry_response = await self.client.responses.create(
+                model=settings.openai_model,
+                input=retry_prompt,
+            )
+            retry_results = self.parse_results(
+                self._extract_text(retry_response),
+                retry_posts,
+                clean_posts,
+                fallback_missing=False,
+            )
+            results.update(
+                {
+                    post_id: result
+                    for post_id, result in retry_results.items()
+                    if not self._has_ukrainian_output(result)
+                }
+            )
+
+        for post_id, _ in posts:
+            if post_id not in results:
+                results[post_id] = (
+                    self._language_failure_fallback()
+                    if post_id in invalid_ids
+                    else self._fallback(clean_posts[post_id])
+                )
+        return results
 
     def build_prompt(self, posts: list[tuple[int, str]]) -> str:
         return (
@@ -79,7 +123,10 @@ class AIPipeline:
             "For newsletter roundups, return a product match only when the relevant item has a "
             "direct actionable source link; a newsletter, tracking, or social-profile link is not enough.\n"
             f"{_PRODUCT_PROFILES}"
-            "Use Russian for fields summary, why_important, explanation.\n"
+            "Regardless of the source language, write summary, why_important, explanation, "
+            "and all product_matches text in Russian only. Never answer in Ukrainian. Translate "
+            "Ukrainian and English source material into Russian. The language field must describe "
+            "the original source language.\n"
             "Keep summary and why_important concise.\n"
             "Set scores from 0 to 1.\n"
             "Set is_promotional=true for ads, sponsorships, sales pitches, event/course promotion, "
@@ -180,10 +227,36 @@ class AIPipeline:
         )
 
     @staticmethod
+    def _language_failure_fallback() -> ProcessedPost:
+        return ProcessedPost(
+            language="uk",
+            summary="Материал требует повторной обработки для перевода на русский язык.",
+            why_important="Некорректный языковой результат не включён в дайджест.",
+            category="General",
+            importance_score=0.0,
+            relevance_score=0.0,
+            explanation="AI дважды вернул текст не на русском языке.",
+            is_promotional=False,
+        )
+
+    @staticmethod
     def _as_bool(value: Any) -> bool:
         if isinstance(value, bool):
             return value
         return str(value).strip().casefold() in {"true", "1", "yes"}
+
+    @staticmethod
+    def _has_ukrainian_output(result: ProcessedPost) -> bool:
+        user_facing_text = " ".join(
+            [
+                result.summary,
+                result.why_important,
+                result.explanation,
+                *(match.why_useful for match in result.product_matches),
+                *(match.suggested_use for match in result.product_matches),
+            ]
+        ).casefold()
+        return any(character in user_facing_text for character in "іїєґ")
 
     @staticmethod
     def _extract_text(response: Any) -> str:
