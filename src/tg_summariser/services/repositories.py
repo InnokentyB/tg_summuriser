@@ -378,7 +378,10 @@ class PostRepository:
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
                 Post.is_promotional.is_(False),
-                Post.importance_score >= settings.digest_min_importance_score,
+                or_(
+                    Post.importance_score >= settings.digest_min_importance_score,
+                    Post.relevance_score >= settings.digest_min_relevance_score,
+                ),
                 Post.source_published_at >= freshness_cutoff,
             )
         )
@@ -415,7 +418,10 @@ class PostRepository:
                 Post.status == PostStatus.processed,
                 Post.was_sent.is_(False),
                 Post.is_promotional.is_(False),
-                Post.importance_score >= settings.digest_min_importance_score,
+                or_(
+                    Post.importance_score >= settings.digest_min_importance_score,
+                    Post.relevance_score >= settings.digest_min_relevance_score,
+                ),
                 Post.source_published_at >= freshness_cutoff,
             )
         )

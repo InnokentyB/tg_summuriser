@@ -762,11 +762,47 @@ async def test_top_candidates_exclude_old_low_importance_and_promotional_posts(d
         post.relevance_score = 0.9
         post.importance_score = 0.8
     low_importance.importance_score = 0.49
+    low_importance.relevance_score = 0.49
     native_ad.is_promotional = True
 
     candidates = await repo.top_candidates()
 
     assert candidates == [good]
+
+
+async def test_top_candidates_include_highly_relevant_insight_with_lower_importance(db_session) -> None:
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=892,
+        title="AI Insights",
+        telegram_username="ai_insights",
+        is_private=False,
+    )
+    repo = PostRepository(db_session)
+    relevant, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="AI-агенты ускоряют разработку, но пока не обладают ответственностью и мотивацией человека.",
+        normalized_text="AI-агенты ускоряют разработку, но пока не обладают ответственностью и мотивацией человека.",
+        original_link="https://t.me/ai_insights/1",
+        source_published_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    irrelevant, _ = await repo.create_post(
+        channel_id=channel.id,
+        telegram_message_id=2,
+        raw_text="Незначительное обновление без практической пользы",
+        normalized_text="Незначительное обновление без практической пользы",
+        original_link="https://t.me/ai_insights/2",
+        source_published_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    for post in (relevant, irrelevant):
+        post.status = PostStatus.processed
+        post.importance_score = 0.4
+    relevant.relevance_score = 0.8
+    irrelevant.relevance_score = 0.4
+
+    candidates = await repo.top_candidates()
+
+    assert candidates == [relevant]
 
 
 async def test_channel_status_counts_and_hidden_examples(db_session) -> None:

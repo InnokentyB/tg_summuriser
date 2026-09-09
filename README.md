@@ -73,6 +73,7 @@ Optional:
 - `DIGEST_SCHEDULES`
 - `DIGEST_MAX_POST_AGE_DAYS` - maximum source-post age included in a digest, default `3`
 - `DIGEST_MIN_IMPORTANCE_SCORE` - minimum AI importance required for a digest, default `0.5`
+- `DIGEST_MIN_RELEVANCE_SCORE` - alternative minimum personal relevance for a digest, default `0.65`
 - `TIMEZONE`
 - `TGARTICLES_DATABASE_URL` - Postgres URL for importing article candidates from TGArticles
 - `TGARTICLES_IMPORT_ENABLED`
