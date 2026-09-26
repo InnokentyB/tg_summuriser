@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 
 from aiogram import Bot
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
 from tg_summariser.db import session_scope
@@ -32,7 +33,10 @@ class ChannelOnboardingTask:
 
 
 class ChannelOnboardingQueue:
+    """Asynchronous worker queue for onboarding and summarizing newly added channels."""
+
     def __init__(self, bot: Bot, ingestion_service: IngestionService, persist_tasks: bool = True) -> None:
+        """Initialize queue worker with bot and ingestion service."""
         self.bot = bot
         self.ingestion_service = ingestion_service
         self.persist_tasks = persist_tasks
@@ -42,6 +46,7 @@ class ChannelOnboardingQueue:
         self._stop_sentinel = ChannelOnboardingTask(channel_id=-1, telegram_user_id=-1)
 
     async def start(self) -> None:
+        """Start the background worker task and recover any persisted tasks."""
         if self.worker_task and not self.worker_task.done():
             return
         self.worker_task = asyncio.create_task(self._worker(), name="channel-onboarding-worker")
@@ -49,6 +54,7 @@ class ChannelOnboardingQueue:
             await self._recover_persisted_tasks()
 
     async def stop(self) -> None:
+        """Gracefully signal worker shutdown and await task completion."""
         if not self.worker_task:
             return
         await self.queue.put(self._stop_sentinel)
@@ -56,6 +62,7 @@ class ChannelOnboardingQueue:
         self.worker_task = None
 
     async def enqueue(self, channel_id: int, telegram_user_id: int) -> bool:
+        """Add channel onboarding task to queue; returns True if newly enqueued."""
         if channel_id in self.pending_channel_ids:
             return False
         if self.persist_tasks:
@@ -149,7 +156,12 @@ class ChannelOnboardingQueue:
             user = await UserRepository(session).get_or_create(task.telegram_user_id)
             synced = await self.ingestion_service.sync_channel(session, channel)
             processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
-            processed = await processor.process_pending(session, user.id)
+            processed = await processor.process_pending(
+                session,
+                user.id,
+                channel_id=channel.id,
+                max_age_days=settings.channel_onboarding_max_post_age_days,
+            )
             sent = await DigestService(self.bot).send_channel_welcome_digest(
                 session=session,
                 user_id=user.id,
@@ -173,7 +185,9 @@ class ChannelOnboardingQueue:
             f"{diagnostics}",
         )
 
-    async def _build_empty_digest_diagnostics(self, session, channel_id: int) -> str:
+    async def _build_empty_digest_diagnostics(
+        self, session: AsyncSession, channel_id: int
+    ) -> str:
         post_repo = PostRepository(session)
         counts = await post_repo.channel_status_counts(channel_id)
         sent_count = await post_repo.sent_count_for_channel(channel_id)

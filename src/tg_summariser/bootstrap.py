@@ -1,10 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.sql import text
 
 from tg_summariser.models import Base
 
 
 async def init_db(engine: AsyncEngine) -> None:
+    """Initialize database tables and run incremental schema migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_column(
@@ -48,16 +49,18 @@ async def init_db(engine: AsyncEngine) -> None:
             await _upgrade_postgres_text_columns(conn)
 
 
-async def _upgrade_postgres_bigint_columns(conn) -> None:
+async def _upgrade_postgres_bigint_columns(conn: AsyncConnection) -> None:
     await _upgrade_postgres_column_to_bigint(conn, "users", "telegram_id")
     await _upgrade_postgres_column_to_bigint(conn, "channels", "telegram_chat_id")
 
 
-async def _upgrade_postgres_text_columns(conn) -> None:
+async def _upgrade_postgres_text_columns(conn: AsyncConnection) -> None:
     await _upgrade_postgres_column_to_text(conn, "posts", "original_link")
 
 
-async def _upgrade_postgres_column_to_text(conn, table_name: str, column_name: str) -> None:
+async def _upgrade_postgres_column_to_text(
+    conn: AsyncConnection, table_name: str, column_name: str
+) -> None:
     result = await conn.execute(
         text(
             """
@@ -77,7 +80,9 @@ async def _upgrade_postgres_column_to_text(conn, table_name: str, column_name: s
     await conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {column_name} TYPE TEXT"))
 
 
-async def _upgrade_postgres_column_to_bigint(conn, table_name: str, column_name: str) -> None:
+async def _upgrade_postgres_column_to_bigint(
+    conn: AsyncConnection, table_name: str, column_name: str
+) -> None:
     result = await conn.execute(
         text(
             """
@@ -103,7 +108,7 @@ async def _upgrade_postgres_column_to_bigint(conn, table_name: str, column_name:
 
 
 async def _ensure_column(
-    conn,
+    conn: AsyncConnection,
     *,
     table_name: str,
     column_name: str,

@@ -116,6 +116,27 @@ def test_find_duplicate_ignores_different_posts() -> None:
     assert duplicate_id is None
 
 
+def test_find_duplicate_does_not_compare_ai_summary_to_unprocessed_article_text() -> None:
+    dedup = Deduplicator()
+    existing = make_post(
+        1,
+        "Title: Эра инженерной зрелости JS. OpenAI и AI упоминаются в обзоре инструментов разработки.",
+    )
+    current = make_post(
+        2,
+        "Якуб Пахоцкий призвал замедлить развитие моделей до решения проблемы выравнивания.",
+    )
+    current.summary = (
+        "Главный научный сотрудник OpenAI призвал замедлить развитие AI-моделей, "
+        "пока проблема выравнивания не будет решена."
+    )
+    current.why_important = "Для разработки AI-систем важны управляемость и ответственность."
+
+    duplicate_id = dedup.find_duplicate(current, [existing])
+
+    assert duplicate_id is None
+
+
 def test_find_duplicate_keeps_related_but_different_news_separate() -> None:
     dedup = Deduplicator()
     current = make_post(

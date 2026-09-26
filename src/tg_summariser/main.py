@@ -10,6 +10,7 @@ from aiogram.enums import ParseMode
 from tg_summariser.bootstrap import init_db
 from tg_summariser.bot.commands import BOT_COMMANDS
 from tg_summariser.bot.handlers import register_handlers
+from tg_summariser.bot.middlewares import OwnerOnlyMiddleware
 from tg_summariser.config import settings
 from tg_summariser.db import engine
 from tg_summariser.scheduler import build_scheduler
@@ -20,6 +21,7 @@ from tg_summariser.services.telegram_client import TelegramUserClient
 
 
 async def main() -> None:
+    """Entrypoint to run the Telegram bot and background services."""
     logging.basicConfig(level=logging.INFO)
     await init_db(engine)
 
@@ -36,6 +38,11 @@ async def main() -> None:
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     await bot.set_my_commands(BOT_COMMANDS)
     dispatcher = Dispatcher()
+    if settings.owner_telegram_id:
+        owner_middleware = OwnerOnlyMiddleware(settings.owner_telegram_id)
+        dispatcher.message.middleware(owner_middleware)
+        dispatcher.callback_query.middleware(owner_middleware)
+
     ingestion_service = IngestionService(tg_client)
     onboarding_queue = ChannelOnboardingQueue(bot=bot, ingestion_service=ingestion_service)
     await onboarding_queue.start()
@@ -57,6 +64,7 @@ async def main() -> None:
         await onboarding_queue.stop()
         await tg_client.disconnect()
         await bot.session.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

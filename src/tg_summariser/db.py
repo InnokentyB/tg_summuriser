@@ -8,6 +8,7 @@ from tg_summariser.config import settings
 
 
 def _ensure_sqlite_parent(url: str) -> None:
+    """Ensure parent directory exists for SQLite database paths."""
     if not url.startswith("sqlite"):
         return
     db_path = url.split("///", maxsplit=1)[-1]
@@ -18,12 +19,15 @@ def _ensure_sqlite_parent(url: str) -> None:
 _ensure_sqlite_parent(settings.normalized_database_url)
 
 
-def _engine_options(url: str) -> dict:
-    options = {"future": True}
+def _engine_options(url: str) -> dict[str, object]:
+    """Build engine connection pool options based on database URL."""
+    options: dict[str, object] = {"future": True}
     if url.startswith(("postgresql+asyncpg://", "postgresql://", "postgres://")):
         options.update(
             pool_size=settings.database_pool_size,
             max_overflow=settings.database_max_overflow,
+            pool_pre_ping=True,
+            pool_recycle=1800,
         )
     return options
 
@@ -37,6 +41,7 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSe
 
 @asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
+    """Provide a transactional asynchronous database session context."""
     session = SessionLocal()
     try:
         yield session

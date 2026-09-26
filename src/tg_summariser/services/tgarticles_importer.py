@@ -31,6 +31,8 @@ class TGArticleCandidate:
 
 
 class TGArticlesSource(Protocol):
+    """Protocol for external article database sources."""
+
     async def fetch_recent_articles(
         self,
         *,
@@ -38,11 +40,15 @@ class TGArticlesSource(Protocol):
         limit: int,
         min_text_length: int,
     ) -> list[TGArticleCandidate]:
+        """Fetch candidate article rows published within the last N days."""
         pass
 
 
 class AsyncpgTGArticlesSource:
+    """External article database reader powered by asyncpg."""
+
     def __init__(self, database_url: str) -> None:
+        """Initialize source with target external PostgreSQL database URL."""
         self.database_url = self._normalize_database_url(database_url)
 
     async def fetch_recent_articles(
@@ -52,6 +58,7 @@ class AsyncpgTGArticlesSource:
         limit: int,
         min_text_length: int,
     ) -> list[TGArticleCandidate]:
+        """Fetch candidate articles from external PostgreSQL article database."""
         import asyncpg
 
         conn = await asyncpg.connect(self.database_url)
@@ -108,17 +115,21 @@ class AsyncpgTGArticlesSource:
 
 
 class TGArticlesImportService:
+    """Service to import articles from an external source into the local channel/posts database."""
+
     def __init__(
         self,
         source: TGArticlesSource | None = None,
         *,
         source_chat_id: int | None = None,
     ) -> None:
+        """Initialize import service with external source and source chat id."""
         self.source = source
         self.source_chat_id = source_chat_id or settings.tgarticles_source_chat_id
 
     @classmethod
     def from_settings(cls) -> "TGArticlesImportService | None":
+        """Instantiate import service configured from application settings."""
         if not settings.tgarticles_import_enabled or not settings.tgarticles_database_url:
             return None
         return cls(AsyncpgTGArticlesSource(settings.tgarticles_database_url))
@@ -131,6 +142,7 @@ class TGArticlesImportService:
         limit: int | None = None,
         min_text_length: int | None = None,
     ) -> int:
+        """Import recent articles from the external source into local pending posts."""
         if not self.source:
             return 0
 

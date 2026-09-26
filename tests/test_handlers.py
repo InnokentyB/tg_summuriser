@@ -70,3 +70,38 @@ async def test_safe_callback_answer_reraises_other_bad_requests() -> None:
 
     with pytest.raises(TelegramBadRequest):
         await safe_callback_answer(callback, "Оценка сохранена.")
+
+
+async def test_owner_only_middleware_allows_owner() -> None:
+    from unittest.mock import AsyncMock, MagicMock
+    from tg_summariser.bot.middlewares import OwnerOnlyMiddleware
+
+    middleware = OwnerOnlyMiddleware(owner_telegram_id=12345)
+    handler = AsyncMock(return_value="handled")
+
+    event = MagicMock()
+    event.from_user.id = 12345
+
+    result = await middleware(handler, event, {})
+    assert result == "handled"
+    handler.assert_awaited_once_with(event, {})
+
+
+async def test_owner_only_middleware_blocks_stranger() -> None:
+    from unittest.mock import AsyncMock, MagicMock
+    from aiogram.types import Message
+    from tg_summariser.bot.middlewares import OwnerOnlyMiddleware
+
+    middleware = OwnerOnlyMiddleware(owner_telegram_id=12345)
+    handler = AsyncMock(return_value="handled")
+
+    event = MagicMock(spec=Message)
+    event.from_user = MagicMock()
+    event.from_user.id = 99999
+    event.answer = AsyncMock()
+
+    result = await middleware(handler, event, {})
+    assert result is None
+    handler.assert_not_awaited()
+    event.answer.assert_awaited_once_with("Этот MVP пока доступен только владельцу.")
+

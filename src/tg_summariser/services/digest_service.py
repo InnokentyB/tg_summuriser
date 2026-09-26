@@ -4,6 +4,7 @@ from datetime import datetime
 from html import escape
 
 from aiogram import Bot
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.bot.keyboards import feedback_keyboard
 from tg_summariser.models import Post
@@ -15,10 +16,14 @@ from tg_summariser.services.repositories import (
 
 
 class DigestService:
+    """Delivers scheduled and on-demand summaries to Telegram users."""
+
     def __init__(self, bot: Bot) -> None:
+        """Initialize digest service with Bot instance."""
         self.bot = bot
 
-    async def send_digest(self, session, user_id: int, telegram_id: int) -> int:
+    async def send_digest(self, session: AsyncSession, user_id: int, telegram_id: int) -> int:
+        """Generate and send the main periodic digest of top candidates."""
         post_repo = PostRepository(session)
         enabled_categories = await UserCategoryPreferenceRepository(session).enabled_categories(user_id)
         posts = await post_repo.top_candidates(categories=enabled_categories or None)
@@ -42,13 +47,14 @@ class DigestService:
 
     async def send_channel_welcome_digest(
         self,
-        session,
+        session: AsyncSession,
         user_id: int,
         telegram_id: int,
         channel_id: int,
         channel_title: str,
         notify_empty: bool = True,
     ) -> int:
+        """Send a welcome preview digest for a newly connected channel."""
         posts = await PostRepository(session).top_candidates_for_channel(channel_id=channel_id)
         if not posts:
             if notify_empty:
@@ -69,7 +75,10 @@ class DigestService:
             posts=posts,
         )
 
-    async def send_posts(self, session, user_id: int, telegram_id: int, posts: list[Post]) -> int:
+    async def send_posts(
+        self, session: AsyncSession, user_id: int, telegram_id: int, posts: list[Post]
+    ) -> int:
+        """Deliver formatted post cards and record digest delivery."""
         digest_repo = DigestRepository(session)
 
         digest = await digest_repo.create_digest(user_id=user_id, scheduled_for=datetime.utcnow())

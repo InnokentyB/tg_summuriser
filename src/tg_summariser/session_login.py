@@ -11,6 +11,7 @@ from tg_summariser.config import settings
 
 
 async def main() -> None:
+    """Interactively log in to Telegram and generate a persistent StringSession string."""
     if not settings.telegram_api_id or not settings.telegram_api_hash:
         raise RuntimeError("TELEGRAM_API_ID and TELEGRAM_API_HASH are required.")
 

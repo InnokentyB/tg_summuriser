@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     owner_telegram_id: int | None = Field(default=None, alias="OWNER_TELEGRAM_ID")
     digest_schedules: str = Field(default="09:00,14:00,19:00", alias="DIGEST_SCHEDULES")
     digest_max_post_age_days: int = Field(default=3, alias="DIGEST_MAX_POST_AGE_DAYS")
+    channel_onboarding_max_post_age_days: int = Field(
+        default=7,
+        alias="CHANNEL_ONBOARDING_MAX_POST_AGE_DAYS",
+    )
     digest_min_importance_score: float = Field(default=0.5, alias="DIGEST_MIN_IMPORTANCE_SCORE")
     digest_min_relevance_score: float = Field(default=0.65, alias="DIGEST_MIN_RELEVANCE_SCORE")
     timezone: str = Field(default="Europe/Lisbon", alias="TIMEZONE")
@@ -67,14 +71,17 @@ class Settings(BaseSettings):
 
     @cached_property
     def digest_times(self) -> list[str]:
+        """Parsed list of HH:MM schedule strings for daily digests."""
         return [item.strip() for item in self.digest_schedules.split(",") if item.strip()]
 
     @cached_property
     def tgarticles_import_times(self) -> list[str]:
+        """Parsed list of HH:MM schedule strings for article imports."""
         return [item.strip() for item in self.tgarticles_import_schedules.split(",") if item.strip()]
 
     @cached_property
     def normalized_database_url(self) -> str:
+        """Database URL with async driver scheme (e.g. postgresql+asyncpg)."""
         url = self.database_url.strip()
         if url.startswith("postgresql+asyncpg://"):
             return url

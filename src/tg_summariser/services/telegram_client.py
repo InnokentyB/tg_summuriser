@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING
 
 from tg_summariser.config import settings
+
+if TYPE_CHECKING:
+    from telethon import TelegramClient
 
 
 @dataclass(slots=True)
 class TelegramChannelPost:
+    """Representation of an ingested Telegram channel message."""
+
     channel_chat_id: int
     channel_title: str
     channel_username: str | None
@@ -19,10 +24,14 @@ class TelegramChannelPost:
 
 
 class TelegramUserClient:
+    """Telethon client wrapper for accessing Telegram channels and messages."""
+
     def __init__(self) -> None:
-        self.client: Any | None = None
+        """Initialize client holder."""
+        self.client: TelegramClient | None = None
 
     async def connect(self) -> None:
+        """Establish Telethon session connection if credentials are configured."""
         if not settings.telegram_api_id or not settings.telegram_api_hash:
             return
         if self.client and self.client.is_connected():
@@ -38,22 +47,26 @@ class TelegramUserClient:
         await self.client.connect()
 
     async def disconnect(self) -> None:
+        """Disconnect active Telethon session."""
         if self.client:
             await self.client.disconnect()
 
-    async def get_entity(self, username: str):
+    async def get_entity(self, username: str) -> object:
+        """Resolve a Telegram username or channel reference to a Telethon entity."""
         if not self.is_connected():
             await self.connect()
-        if not self.is_connected():
+        if not self.is_connected() or not self.client:
             raise RuntimeError("Telegram user client is not connected.")
         return await self.client.get_entity(username)
 
     def is_connected(self) -> bool:
+        """Return True if the underlying client is connected and active."""
         return bool(self.client and self.client.is_connected())
 
     async def iter_recent_channel_posts(
         self, channel_ref: int | str, limit: int = 15
     ) -> list[TelegramChannelPost]:
+        """Fetch recent channel messages and convert them to TelegramChannelPost."""
         if not self.client or not self.client.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         from telethon.tl.custom.message import Message as TelethonMessage
@@ -82,6 +95,7 @@ class TelegramUserClient:
         return posts
 
     async def mark_channel_posts_read(self, channel_ref: int | str, max_message_id: int) -> None:
+        """Mark posts up to max_message_id as read in the specified channel."""
         if not self.client or not self.client.is_connected():
             raise RuntimeError("Telegram user client is not connected.")
         entity = await self.client.get_entity(channel_ref)

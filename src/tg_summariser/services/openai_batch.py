@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
-from typing import Any
 
 from openai import AsyncOpenAI
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
 from tg_summariser.models import AIBatchJob, Post, PostStatus
+from tg_summariser.schemas import ProcessedPost
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.prefilter import LocalPrefilter
@@ -17,18 +18,24 @@ from tg_summariser.services.product_radar import serialize_product_matches
 from tg_summariser.services.repositories import FeedbackRepository, PostRepository
 from tg_summariser.services.scoring import RelevanceScorer
 
+logger = logging.getLogger(__name__)
+
 _ACTIVE_STATUSES = {"validating", "in_progress", "finalizing"}
 _FAILED_STATUSES = {"failed", "expired", "cancelled"}
 
 
 class OpenAIBatchService:
+    """Service to submit and collect bulk AI analysis jobs using OpenAI Batch API."""
+
     def __init__(self, client: AsyncOpenAI | None = None) -> None:
+        """Initialize batch service with optional OpenAI client."""
         self.client = client or (
             AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
         )
         self.pipeline = AIPipeline()
 
     async def submit_pending(self, session: AsyncSession, user_id: int) -> int:
+        """Submit pending posts to the OpenAI Batch API if enabled."""
         if not settings.openai_batch_enabled or not self.client:
             return 0
 
@@ -78,6 +85,7 @@ class OpenAIBatchService:
         return len(eligible)
 
     async def collect_completed(self, session: AsyncSession, user_id: int) -> int:
+        """Poll and retrieve completed OpenAI batch jobs, applying results to posts."""
         if not settings.openai_batch_enabled or not self.client:
             return 0
         result = await session.execute(
@@ -151,7 +159,8 @@ class OpenAIBatchService:
                         fallback_missing=False,
                     )
                 )
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                logger.debug("Failed parsing batch output line: %s", exc)
                 continue
 
         feedback = FeedbackRepository(session)
@@ -188,7 +197,7 @@ class OpenAIBatchService:
             post.ai_batch_job_id = None
 
     @staticmethod
-    def _apply_ai_result(post: Post, result: Any) -> None:
+    def _apply_ai_result(post: Post, result: ProcessedPost) -> None:
         post.language = result.language
         post.summary = result.summary
         post.why_important = result.why_important
@@ -202,10 +211,17 @@ class OpenAIBatchService:
         )
 
     @staticmethod
-    def _response_output_text(body: dict[str, Any]) -> str:
-        parts = []
-        for item in body.get("output", []):
-            for content in item.get("content", []):
-                if content.get("type") == "output_text":
-                    parts.append(content.get("text", ""))
+    def _response_output_text(body: dict[str, object]) -> str:
+        parts: list[str] = []
+        raw_output = body.get("output")
+        if isinstance(raw_output, list):
+            for item in raw_output:
+                if not isinstance(item, dict):
+                    continue
+                content_list = item.get("content")
+                if not isinstance(content_list, list):
+                    continue
+                for content in content_list:
+                    if isinstance(content, dict) and content.get("type") == "output_text":
+                        parts.append(str(content.get("text", "")))
         return "".join(parts)

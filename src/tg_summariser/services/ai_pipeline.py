@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import logging
 
 from openai import AsyncOpenAI, RateLimitError
 
 from tg_summariser.config import settings
 from tg_summariser.schemas import ProcessedPost, ProductMatch
+
+logger = logging.getLogger(__name__)
 
 _PRODUCT_PROFILES = (
     "Product fit profiles:\n"
@@ -20,14 +22,19 @@ _PRODUCT_PROFILES = (
 
 
 class AIPipeline:
+    """Processes post contents through OpenAI LLM for summarization, scoring, and analysis."""
+
     def __init__(self) -> None:
+        """Initialize AI pipeline with optional OpenAI client."""
         self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
         self.api_disabled_reason: str | None = None
 
     async def process_post(self, text: str) -> ProcessedPost:
+        """Process a single post text and return its structured summary."""
         return (await self.process_posts([(0, text)]))[0]
 
     async def process_posts(self, posts: list[tuple[int, str]]) -> dict[int, ProcessedPost]:
+        """Process a batch of posts through the LLM pipeline."""
         results: dict[int, ProcessedPost] = {}
         api_posts: list[tuple[int, str]] = []
         clean_posts = {post_id: " ".join(text.split()) for post_id, text in posts}
@@ -111,6 +118,7 @@ class AIPipeline:
         return results
 
     def build_prompt(self, posts: list[tuple[int, str]]) -> str:
+        """Construct prompt instructions and JSON payload for the LLM."""
         return (
             "You process Telegram channel posts for a personal digest.\n"
             "Return strict JSON object with a results array. Return exactly one result per input "
@@ -145,6 +153,7 @@ class AIPipeline:
         clean_posts: dict[int, str] | None = None,
         fallback_missing: bool = True,
     ) -> dict[int, ProcessedPost]:
+        """Parse structured JSON from LLM response into ProcessedPost objects."""
         clean_posts = clean_posts or {post_id: " ".join(text.split()) for post_id, text in posts}
         expected_ids = {post_id for post_id, _ in posts}
         parsed_results: dict[int, ProcessedPost] = {}
@@ -160,9 +169,11 @@ class AIPipeline:
                         continue
                     clean_text = clean_posts[post_id]
                     parsed_results[post_id] = self._processed_post(item, clean_text)
-                except (KeyError, ValueError, TypeError):
+                except (KeyError, ValueError, TypeError) as exc:
+                    logger.debug("Failed parsing post item from AI results: %s", exc)
                     continue
-        except (AttributeError, ValueError, TypeError, json.JSONDecodeError):
+        except (AttributeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            logger.warning("Failed parsing AI JSON response content: %s", exc)
             parsed_results = {}
 
         if fallback_missing:
@@ -170,21 +181,21 @@ class AIPipeline:
                 parsed_results[post_id] = self._fallback(clean_posts[post_id])
         return parsed_results
 
-    def _processed_post(self, parsed: dict[str, Any], clean_text: str) -> ProcessedPost:
+    def _processed_post(self, parsed: dict[str, object], clean_text: str) -> ProcessedPost:
         return ProcessedPost(
-            language=parsed.get("language", "unknown"),
-            summary=parsed.get("summary", clean_text[:180]),
-            why_important=parsed.get("why_important", "Может быть полезно для общего контекста."),
-            category=parsed.get("category", "General"),
-            importance_score=float(parsed.get("importance_score", 0.5)),
-            relevance_score=float(parsed.get("relevance_score", 0.5)),
-            explanation=parsed.get("explanation", "Добавлен по базовой AI-оценке."),
+            language=str(parsed.get("language", "unknown")),
+            summary=str(parsed.get("summary", clean_text[:180])),
+            why_important=str(parsed.get("why_important", "Может быть полезно для общего контекста.")),
+            category=str(parsed.get("category", "General")),
+            importance_score=float(parsed.get("importance_score", 0.5)),  # type: ignore[arg-type]
+            relevance_score=float(parsed.get("relevance_score", 0.5)),  # type: ignore[arg-type]
+            explanation=str(parsed.get("explanation", "Добавлен по базовой AI-оценке.")),
             is_promotional=self._as_bool(parsed.get("is_promotional", False)),
             product_matches=self._product_matches(parsed.get("product_matches", [])),
         )
 
     @staticmethod
-    def _product_matches(value: Any) -> list[ProductMatch]:
+    def _product_matches(value: object) -> list[ProductMatch]:
         if not isinstance(value, list):
             return []
         allowed_products = {"Контент-завод", "Seturon", "Подмастерье аналитика"}
@@ -198,7 +209,7 @@ class AIPipeline:
                 continue
             matches.append(
                 ProductMatch(
-                    product=item["product"],
+                    product=str(item["product"]),
                     score=score,
                     why_useful=str(item.get("why_useful", "")).strip(),
                     suggested_use=str(item.get("suggested_use", "")).strip(),
@@ -244,7 +255,7 @@ class AIPipeline:
         )
 
     @staticmethod
-    def _as_bool(value: Any) -> bool:
+    def _as_bool(value: object) -> bool:
         if isinstance(value, bool):
             return value
         return str(value).strip().casefold() in {"true", "1", "yes"}
@@ -263,13 +274,13 @@ class AIPipeline:
         return any(character in user_facing_text for character in "іїєґ")
 
     @staticmethod
-    def _extract_text(response: Any) -> str:
+    def _extract_text(response: object) -> str:
         if hasattr(response, "output_text") and response.output_text:
-            return response.output_text
+            return str(response.output_text)
         for item in getattr(response, "output", []):
             for content in getattr(item, "content", []):
                 if getattr(content, "type", "") == "output_text":
-                    return content.text
+                    return str(content.text)
         return "{}"
 
     @staticmethod

@@ -144,3 +144,32 @@ async def test_post_processor_hides_stale_posts_before_ai(db_session) -> None:
     assert post.explanation == (
         "Скрыто до AI: публикация старше окна дайджеста или дата неизвестна."
     )
+
+
+async def test_channel_onboarding_can_process_a_wider_age_window(db_session) -> None:
+    user = await UserRepository(db_session).get_or_create(telegram_id=4, username="owner")
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=9005,
+        title="Weekly AI",
+        telegram_username="weeklyai",
+        is_private=False,
+    )
+    post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=101,
+        raw_text="A substantive post about AI agent responsibility",
+        normalized_text="A substantive post about AI agent responsibility",
+        original_link="https://t.me/weeklyai/101",
+        source_published_at=datetime.utcnow() - timedelta(days=6),
+    )
+
+    processor = PostProcessor(FakeAIPipeline(), FakeDeduplicator(), FakeScorer())
+    processed = await processor.process_pending(
+        db_session,
+        user.id,
+        channel_id=channel.id,
+        max_age_days=7,
+    )
+
+    assert processed == 1
+    assert post.status == PostStatus.processed

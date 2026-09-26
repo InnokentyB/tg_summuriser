@@ -14,23 +14,40 @@ from tg_summariser.services.scoring import RelevanceScorer
 
 
 class PostProcessor:
+    """Orchestrates AI enrichment, deduplication, and scoring of pending posts."""
+
     def __init__(
         self,
         ai_pipeline: AIPipeline,
         deduplicator: Deduplicator,
         scorer: RelevanceScorer,
         prefilter: LocalPrefilter | None = None,
-    ):
+    ) -> None:
+        """Initialize post processor pipeline components."""
         self.ai_pipeline = ai_pipeline
         self.deduplicator = deduplicator
         self.scorer = scorer
         self.prefilter = prefilter or LocalPrefilter()
 
-    async def process_pending(self, session: AsyncSession, user_id: int) -> int:
+    async def process_pending(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        *,
+        channel_id: int | None = None,
+        max_age_days: int | None = None,
+    ) -> int:
+        """Batch-process unanalyzed posts with AI, scoring, and deduplication."""
         post_repo = PostRepository(session)
         feedback_repo = FeedbackRepository(session)
-        await post_repo.hide_stale_pending(settings.digest_max_post_age_days)
-        posts = await post_repo.pending_posts(limit=settings.ai_processing_limit_per_run)
+        await post_repo.hide_stale_pending(
+            max_age_days or settings.digest_max_post_age_days,
+            channel_id=channel_id,
+        )
+        posts = await post_repo.pending_posts(
+            limit=settings.ai_processing_limit_per_run,
+            channel_id=channel_id,
+        )
         if not posts:
             return 0
 

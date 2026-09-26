@@ -6,15 +6,20 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from openai import AsyncOpenAI
 
 from tg_summariser.config import settings
 
+if TYPE_CHECKING:
+    from telethon.sessions import StringSession
+
 
 @dataclass(slots=True)
 class ChatMessage:
+    """Exported Telegram chat message."""
+
     message_id: int
     date: str
     sender_id: int | None
@@ -23,6 +28,8 @@ class ChatMessage:
 
 @dataclass(slots=True)
 class ChatInsightResult:
+    """Artifact paths and metadata for an analyzed chat history."""
+
     raw_path: Path
     chunk_path: Path
     report_path: Path
@@ -30,14 +37,17 @@ class ChatInsightResult:
 
 
 class ChatHistoryExporter:
+    """Exports message history from Telegram chats via Telethon."""
+
     async def export_messages(self, chat_ref: str, limit: int | None) -> list[ChatMessage]:
+        """Export up to limit messages from the specified chat reference."""
         if not settings.telegram_api_id or not settings.telegram_api_hash:
             raise RuntimeError("TELEGRAM_API_ID and TELEGRAM_API_HASH are required.")
 
         from telethon import TelegramClient
         from telethon.sessions import StringSession
 
-        session: str | Any = settings.telegram_session_name
+        session: str | StringSession = settings.telegram_session_name
         if settings.telegram_session_string:
             session = StringSession(settings.telegram_session_string)
 
@@ -69,6 +79,7 @@ class ChatInsightAnalyzer:
         self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
 
     async def analyze(self, messages: list[ChatMessage], output_dir: Path, chat_ref: str) -> ChatInsightResult:
+        """Run chunked LLM extraction of key insights from chat history."""
         output_dir.mkdir(parents=True, exist_ok=True)
         safe_name = self._safe_filename(chat_ref)
         raw_path = output_dir / f"{safe_name}.messages.jsonl"
@@ -168,17 +179,18 @@ class ChatInsightAnalyzer:
         return safe[:80] or f"chat_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
     @staticmethod
-    def _extract_text(response: Any) -> str:
+    def _extract_text(response: object) -> str:
         if hasattr(response, "output_text") and response.output_text:
-            return response.output_text
+            return str(response.output_text)
         for item in getattr(response, "output", []):
             for content in getattr(item, "content", []):
                 if getattr(content, "type", "") == "output_text":
-                    return content.text
+                    return str(content.text)
         return ""
 
 
 async def run(args: argparse.Namespace) -> ChatInsightResult:
+    """Execute chat export and analysis according to parsed CLI arguments."""
     limit = None if args.limit == 0 else args.limit
     messages = await ChatHistoryExporter().export_messages(args.chat_ref, limit=limit)
     analyzer = ChatInsightAnalyzer(chunk_chars=args.chunk_chars)
@@ -186,6 +198,7 @@ async def run(args: argparse.Namespace) -> ChatInsightResult:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct CLI argument parser for chat insight extraction."""
     parser = argparse.ArgumentParser(description="Export a Telegram chat history and extract insights.")
     parser.add_argument("chat_ref", help="Telegram chat reference: @username, t.me link, invite entity, or id.")
     parser.add_argument("--limit", type=int, default=5000, help="Messages to scan. Use 0 for all available history.")
@@ -195,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Main CLI entrypoint for chat insights tool."""
     result = asyncio.run(run(build_parser().parse_args()))
     print(f"Exported messages: {result.message_count}")
     print(f"Raw JSONL: {result.raw_path}")

@@ -2,12 +2,15 @@ from tg_summariser.models import FeedbackValue, Post, PostStatus
 
 
 class RelevanceScorer:
+    """Calculates personalized post relevance scores taking user feedback into account."""
+
     def score(
         self,
         post: Post,
         category_affinity: dict[str, float],
         channel_affinity: dict[int, float],
     ) -> tuple[float, PostStatus, str]:
+        """Compute final relevance score and determine whether to process or hide the post."""
         score = post.relevance_score
         explanation_parts = [post.explanation or "Базовая оценка AI."]
 
@@ -32,5 +35,6 @@ class RelevanceScorer:
         return max(0.0, min(score, 1.0)), status, " ".join(explanation_parts)
 
     def feedback_adjustment(self, feedback: FeedbackValue) -> float:
+        """Return score adjustment delta according to user reaction."""
         return 0.15 if feedback == FeedbackValue.interested else -0.25
 

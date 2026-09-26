@@ -10,10 +10,14 @@ from tg_summariser.services.telegram_client import TelegramUserClient
 
 
 class ChannelService:
+    """Service to connect and extract channel metadata from forwarded posts and links."""
+
     def __init__(self, tg_client: TelegramUserClient) -> None:
+        """Initialize channel service with user client."""
         self.tg_client = tg_client
 
     async def add_from_forward(self, message: Message, repo: ChannelRepository) -> Channel:
+        """Extract and persist channel info from a forwarded Telegram post."""
         if not message.forward_from_chat:
             raise ValueError("Перешлите именно пост из канала.")
 
@@ -27,6 +31,7 @@ class ChannelService:
         return channel
 
     async def add_from_text(self, text: str, repo: ChannelRepository) -> Channel:
+        """Resolve a channel from raw text link/@username and persist it."""
         usernames = extract_channel_usernames(text)
         if not usernames:
             raise ValueError("Не удалось распознать username канала.")
@@ -45,6 +50,7 @@ class ChannelService:
 
 
 def extract_channel_usernames(text: str) -> list[str]:
+    """Parse distinct channel @usernames and t.me links out of text."""
     usernames: list[str] = []
     seen: set[str] = set()
     for match in re.finditer(r"(?:https?://t\.me/|@)([A-Za-z0-9_]+)", text):

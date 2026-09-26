@@ -9,6 +9,8 @@ def test_postgres_engine_uses_bounded_pool(monkeypatch):
         "future": True,
         "pool_size": 2,
         "max_overflow": 2,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
     }
 
 

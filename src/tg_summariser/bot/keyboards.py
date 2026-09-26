@@ -3,6 +3,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def feedback_keyboard(post: Post) -> InlineKeyboardMarkup:
+    """Build inline reaction keyboard (Interested / Not interested) for a post."""
     if post.channel and post.channel.telegram_chat_id:
         callback_prefix = f"feedback:{post.channel.telegram_chat_id}:{post.telegram_message_id}"
     else:

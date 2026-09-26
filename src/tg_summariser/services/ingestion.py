@@ -14,10 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class IngestionService:
+    """Synchronizes messages from Telegram channels into the database."""
+
     def __init__(self, tg_client: TelegramUserClient) -> None:
+        """Initialize ingestion service with user client."""
         self.tg_client = tg_client
 
     async def sync_channels(self, session: AsyncSession, limit_per_channel: int = 15) -> int:
+        """Iterate over all active Telegram channels and ingest recent posts."""
         if not self.tg_client.is_connected():
             await self.tg_client.connect()
         if not self.tg_client.is_connected():
@@ -78,6 +82,7 @@ class IngestionService:
         limit: int = 15,
         post_repo: PostRepository | None = None,
     ) -> int:
+        """Fetch and persist recent posts from a single channel."""
         if not self.tg_client.is_connected():
             await self.tg_client.connect()
         if not self.tg_client.is_connected():

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from html import escape
 
 from aiogram import Bot
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from tg_summariser.bot.keyboards import feedback_keyboard
@@ -12,8 +14,11 @@ from tg_summariser.config import settings
 from tg_summariser.models import Post, PostStatus
 from tg_summariser.schemas import ProductMatch
 
+logger = logging.getLogger(__name__)
+
 
 def serialize_product_matches(matches: list[ProductMatch]) -> str | None:
+    """Serialize a list of ProductMatch items to a JSON string or None."""
     if not matches:
         return None
     return json.dumps(
@@ -31,6 +36,7 @@ def serialize_product_matches(matches: list[ProductMatch]) -> str | None:
 
 
 def deserialize_product_matches(value: str | None) -> list[ProductMatch]:
+    """Deserialize a JSON string into a list of ProductMatch items."""
     if not value:
         return []
     try:
@@ -45,15 +51,20 @@ def deserialize_product_matches(value: str | None) -> list[ProductMatch]:
             for item in items
             if isinstance(item, dict)
         ]
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        logger.debug("Failed deserializing product matches JSON: %s", exc)
         return []
 
 
 class ProductRadarService:
+    """Delivers product radar match alerts to Telegram users."""
+
     def __init__(self, bot: Bot) -> None:
+        """Initialize product radar with Telegram Bot instance."""
         self.bot = bot
 
-    async def send_review(self, session, telegram_id: int) -> int:
+    async def send_review(self, session: AsyncSession, telegram_id: int) -> int:
+        """Find matching product review posts and send alert cards to the user."""
         if not settings.product_radar_enabled:
             return 0
         result = await session.execute(

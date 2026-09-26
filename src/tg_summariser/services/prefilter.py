@@ -20,7 +20,10 @@ class PrefilterDecision:
 
 
 class LocalPrefilter:
+    """Fast local rule-based filter to discard promotional and irrelevant posts before LLM calls."""
+
     def __init__(self) -> None:
+        """Initialize prefilter with configured positive and negative keywords."""
         self.positive_keywords = self._parse_keywords(settings.ai_prefilter_positive_keywords)
         self.negative_keywords = self._parse_keywords(settings.ai_prefilter_negative_keywords)
 
@@ -30,6 +33,7 @@ class LocalPrefilter:
         *,
         channel_affinity: dict[int, float],
     ) -> PrefilterDecision:
+        """Evaluate post text against heuristics and decide whether to send to AI."""
         if not settings.ai_prefilter_enabled:
             return PrefilterDecision(should_call_ai=True)
 
@@ -88,6 +92,7 @@ class LocalPrefilter:
         ]
 
     def is_promotional(self, post: Post) -> bool:
+        """Return True if post matches any known promotional/advertising keywords."""
         text = " ".join(
             value
             for value in (post.raw_text, post.summary, post.why_important, post.explanation)

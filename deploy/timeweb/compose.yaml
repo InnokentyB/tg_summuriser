@@ -1,0 +1,24 @@
+name: tg-summuriser-dogfood
+
+services:
+  bot:
+    image: ${TG_SUMMARISER_IMAGE:-tg-summuriser:47193aba}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    env_file:
+      - path: ${TG_SUMMARISER_ENV_FILE:-/etc/tg-summuriser/runtime.env}
+        required: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - /var/lib/tg-summuriser/data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    stop_grace_period: 30s

@@ -4,6 +4,7 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
 from tg_summariser.db import session_scope
@@ -23,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler:
+    """Build and configure the AsyncIOScheduler with periodic digest and import jobs."""
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
-    async def import_articles(session) -> int:
+    async def import_articles(session: AsyncSession) -> int:
         article_importer = TGArticlesImportService.from_settings()
         if not article_importer:
             return 0

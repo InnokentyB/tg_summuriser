@@ -117,7 +117,10 @@ _ALIASES = {
 
 
 class Deduplicator:
+    """Detects near-duplicate and cross-channel reposted posts via heuristics and URLs."""
+
     def find_duplicate(self, post: Post, existing_posts: list[Post]) -> int | None:
+        """Find the ID of a matching duplicate post among existing candidates or None."""
         for candidate in existing_posts:
             if candidate.id == post.id:
                 continue
@@ -133,13 +136,14 @@ class Deduplicator:
             and candidate_document_ids
         ):
             return not post_document_ids.isdisjoint(candidate_document_ids)
-        for current_text in self._comparison_texts(post):
-            for candidate_text in self._comparison_texts(candidate):
+        use_ai_text = bool(post.summary and candidate.summary)
+        for current_text in self._comparison_texts(post, use_ai_text=use_ai_text):
+            for candidate_text in self._comparison_texts(candidate, use_ai_text=use_ai_text):
                 if self._text_similarity(current_text, candidate_text) >= 0.92:
                     return True
                 if self._token_similarity(current_text, candidate_text):
                     return True
-        return self._same_news_event(post, candidate)
+        return self._same_news_event(post, candidate, use_ai_text=use_ai_text)
 
     def _document_ids(self, post: Post) -> set[str]:
         values = (post.raw_text, post.normalized_text, post.original_link or "")
@@ -149,8 +153,8 @@ class Deduplicator:
             for match in _ARXIV_ID_RE.finditer(value)
         }
 
-    def _comparison_texts(self, post: Post) -> list[str]:
-        if post.summary or post.why_important:
+    def _comparison_texts(self, post: Post, *, use_ai_text: bool = True) -> list[str]:
+        if use_ai_text and (post.summary or post.why_important):
             values = [post.summary or "", post.why_important or ""]
         else:
             values = [post.normalized_text]
@@ -174,9 +178,9 @@ class Deduplicator:
             intersection
         )
 
-    def _same_news_event(self, post: Post, candidate: Post) -> bool:
-        left_tokens = self._news_tokens(post)
-        right_tokens = self._news_tokens(candidate)
+    def _same_news_event(self, post: Post, candidate: Post, *, use_ai_text: bool = True) -> bool:
+        left_tokens = self._news_tokens(post, use_ai_text=use_ai_text)
+        right_tokens = self._news_tokens(candidate, use_ai_text=use_ai_text)
         if len(left_tokens) < 6 or len(right_tokens) < 6:
             return False
 
@@ -203,8 +207,13 @@ class Deduplicator:
             tokens.add(token)
         return tokens
 
-    def _news_tokens(self, post: Post) -> set[str]:
-        return set().union(*(self._significant_tokens(text) for text in self._comparison_texts(post)))
+    def _news_tokens(self, post: Post, *, use_ai_text: bool = True) -> set[str]:
+        return set().union(
+            *(
+                self._significant_tokens(text)
+                for text in self._comparison_texts(post, use_ai_text=use_ai_text)
+            )
+        )
 
     def _canonical_token(self, token: str) -> str:
         if token == "x4":

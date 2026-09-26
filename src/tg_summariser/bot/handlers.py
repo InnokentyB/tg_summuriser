@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
+    """Parse raw /search command argument string into query, category, and channel filters."""
     query = raw_args.strip()
     category = None
     channel = None
@@ -57,6 +58,7 @@ def parse_search_args(raw_args: str) -> tuple[str, str | None, str | None]:
 
 
 def format_channel_sync_status(last_synced_at: datetime | None, now: datetime | None = None) -> str:
+    """Format human-readable sync status from last_synced_at timestamp."""
     if last_synced_at is None:
         return "ещё не читали"
 
@@ -79,6 +81,7 @@ def format_channel_sync_status(last_synced_at: datetime | None, now: datetime | 
 async def safe_callback_answer(
     callback: CallbackQuery, text: str, *, show_alert: bool = False
 ) -> None:
+    """Acknowledge a Telegram callback query, safely ignoring stale/expired callback errors."""
     try:
         await callback.answer(text, show_alert=show_alert)
     except TelegramBadRequest as exc:
@@ -94,15 +97,20 @@ def register_handlers(
     ingestion_service: IngestionService,
     onboarding_queue: ChannelOnboardingQueue,
 ) -> Router:
+    """Register all bot command and event handlers and return configured router."""
     @router.message(CommandStart())
     async def start(message: Message) -> None:
         if settings.owner_telegram_id and message.from_user and message.from_user.id != settings.owner_telegram_id:
             await message.answer("Этот MVP пока доступен только владельцу.")
             return
 
+        user_id = message.from_user.id if message.from_user else None
+        username = message.from_user.username if message.from_user else None
+        logger.info("User started bot: id=%s, username=%s", user_id, username)
+
         async with session_scope() as session:
             repo = UserRepository(session)
-            await repo.get_or_create(message.from_user.id, message.from_user.username if message.from_user else None)
+            await repo.get_or_create(message.from_user.id, username)
         await message.answer(
             "Бот запущен. Перешлите пост из канала, чтобы добавить источник, или используйте /help."
         )
