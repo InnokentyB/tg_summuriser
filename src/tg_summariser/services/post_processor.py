@@ -65,11 +65,7 @@ class PostProcessor:
             post.id: self.prefilter.decide(post, channel_affinity=channel_affinity)
             for post in posts
         }
-        ai_posts = [
-            (post.id, post.raw_text)
-            for post in posts
-            if decisions[post.id].should_call_ai
-        ]
+        ai_posts = [(post.id, post.raw_text) for post in posts if decisions[post.id].should_call_ai]
         ai_results = await self.ai_pipeline.process_posts(ai_posts) if ai_posts else {}
 
         processed = 0
@@ -78,10 +74,10 @@ class PostProcessor:
             ai_result = ai_results.get(post.id, prefilter_decision.ai_result)
             if ai_result is None:
                 continue
-            post.language = ai_result.language
+            post.language = ai_result.language[:16] if ai_result.language else None
             post.summary = ai_result.summary
             post.why_important = ai_result.why_important
-            post.category = ai_result.category
+            post.category = ai_result.category[:255] if ai_result.category else None
             post.importance_score = ai_result.importance_score
             post.relevance_score = ai_result.relevance_score
             post.explanation = ai_result.explanation
@@ -94,7 +90,9 @@ class PostProcessor:
                 post.status = prefilter_decision.forced_status
                 post.explanation = prefilter_decision.explanation or post.explanation
             else:
-                score, status, explanation = self.scorer.score(post, category_affinity, channel_affinity)
+                score, status, explanation = self.scorer.score(
+                    post, category_affinity, channel_affinity
+                )
                 post.relevance_score = score
                 post.status = status
                 post.explanation = explanation

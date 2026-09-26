@@ -198,10 +198,10 @@ class OpenAIBatchService:
 
     @staticmethod
     def _apply_ai_result(post: Post, result: ProcessedPost) -> None:
-        post.language = result.language
+        post.language = result.language[:16] if result.language else None
         post.summary = result.summary
         post.why_important = result.why_important
-        post.category = result.category
+        post.category = result.category[:255] if result.category else None
         post.importance_score = result.importance_score
         post.relevance_score = result.relevance_score
         post.explanation = result.explanation

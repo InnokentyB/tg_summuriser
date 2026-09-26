@@ -26,7 +26,9 @@ class AIPipeline:
 
     def __init__(self) -> None:
         """Initialize AI pipeline with optional OpenAI client."""
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.client = (
+            AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        )
         self.api_disabled_reason: str | None = None
 
     async def process_post(self, text: str) -> ProcessedPost:
@@ -183,10 +185,12 @@ class AIPipeline:
 
     def _processed_post(self, parsed: dict[str, object], clean_text: str) -> ProcessedPost:
         return ProcessedPost(
-            language=str(parsed.get("language", "unknown")),
+            language=str(parsed.get("language", "unknown"))[:16],
             summary=str(parsed.get("summary", clean_text[:180])),
-            why_important=str(parsed.get("why_important", "Может быть полезно для общего контекста.")),
-            category=str(parsed.get("category", "General")),
+            why_important=str(
+                parsed.get("why_important", "Может быть полезно для общего контекста.")
+            ),
+            category=str(parsed.get("category", "General"))[:255],
             importance_score=float(parsed.get("importance_score", 0.5)),  # type: ignore[arg-type]
             relevance_score=float(parsed.get("relevance_score", 0.5)),  # type: ignore[arg-type]
             explanation=str(parsed.get("explanation", "Добавлен по базовой AI-оценке.")),
@@ -231,7 +235,9 @@ class AIPipeline:
         why = "Пост может быть релевантен вашим основным темам или источникам."
         explanation = "Добавлен по fallback-логике: текст совпадает с приоритетными темами."
         return ProcessedPost(
-            language="ru" if any(ch in lowered for ch in "абвгдежзийклмнопрстуфхцчшщыэюя") else "en",
+            language="ru"
+            if any(ch in lowered for ch in "абвгдежзийклмнопрстуфхцчшщыэюя")
+            else "en",
             summary=summary,
             why_important=why,
             category=category,
