@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from tg_summariser.config import settings
+from tg_summariser.telegram_proxy import telethon_proxy_from_url
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -43,7 +44,12 @@ class TelegramUserClient:
             session: str | StringSession = settings.telegram_session_name
             if settings.telegram_session_string:
                 session = StringSession(settings.telegram_session_string)
-            self.client = TelegramClient(session, settings.telegram_api_id, settings.telegram_api_hash)
+            self.client = TelegramClient(
+                session,
+                settings.telegram_api_id,
+                settings.telegram_api_hash,
+                proxy=telethon_proxy_from_url(settings.telegram_proxy_url),
+            )
         await self.client.connect()
 
     async def disconnect(self) -> None:

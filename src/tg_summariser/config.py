@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     telegram_api_hash: str = Field(default="", alias="TELEGRAM_API_HASH")
     telegram_session_name: str = Field(default="tg_summariser", alias="TELEGRAM_SESSION_NAME")
     telegram_session_string: str = Field(default="", alias="TELEGRAM_SESSION_STRING")
+    telegram_proxy_url: str = Field(default="", alias="TELEGRAM_PROXY_URL")
     telegram_sync_delay_seconds: float = Field(default=15.0, alias="TELEGRAM_SYNC_DELAY_SECONDS")
     telegram_channel_sync_timeout_seconds: float = Field(
         default=45.0,

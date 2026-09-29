@@ -70,6 +70,7 @@ Optional:
 - `AI_PREFILTER_NEGATIVE_KEYWORDS` - comma-separated promo/noise keywords hidden before OpenAI
 - `TELEGRAM_SYNC_DELAY_SECONDS` - delay between Telegram channel reads to reduce flood-wait risk, default `15`
 - `TELEGRAM_CHANNEL_SYNC_TIMEOUT_SECONDS` - max time spent on one Telegram channel, default `45`
+- `TELEGRAM_PROXY_URL` - optional HTTP or SOCKS proxy shared by the Bot API and Telethon client
 - `DIGEST_SCHEDULES`
 - `DIGEST_MAX_POST_AGE_DAYS` - maximum source-post age included in a digest, default `3`
 - `DIGEST_MIN_IMPORTANCE_SCORE` - minimum AI importance required for a digest, default `0.5`

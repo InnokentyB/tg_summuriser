@@ -5,6 +5,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 
 from tg_summariser.bootstrap import init_db
@@ -35,7 +36,14 @@ async def main() -> None:
             "Telethon user client is not configured. Private channels and ingestion are disabled until Telegram session credentials are provided."
         )
 
-    bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot_session = None
+    if settings.telegram_proxy_url:
+        bot_session = AiohttpSession(proxy=settings.telegram_proxy_url)
+    bot = Bot(
+        settings.bot_token,
+        session=bot_session,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     await bot.set_my_commands(BOT_COMMANDS)
     dispatcher = Dispatcher()
     if settings.owner_telegram_id:
