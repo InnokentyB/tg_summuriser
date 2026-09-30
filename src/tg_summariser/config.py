@@ -1,4 +1,5 @@
 from functools import cached_property
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,11 @@ class Settings(BaseSettings):
     bot_token: str = Field(default="", alias="BOT_TOKEN")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5.6-luna", alias="OPENAI_MODEL")
+    openai_base_url: str = Field(default="", alias="OPENAI_BASE_URL")
+    openai_api_mode: Literal["responses", "chat_completions"] = Field(
+        default="responses",
+        alias="OPENAI_API_MODE",
+    )
     ai_processing_limit_per_run: int = Field(default=20, alias="AI_PROCESSING_LIMIT_PER_RUN")
     ai_batch_size: int = Field(default=5, alias="AI_BATCH_SIZE")
     openai_batch_enabled: bool = Field(default=False, alias="OPENAI_BATCH_ENABLED")

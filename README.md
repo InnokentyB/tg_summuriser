@@ -56,6 +56,8 @@ Optional:
 - `DB_MAX_OVERFLOW` - temporary connections allowed above the pool, default `2`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `OPENAI_BASE_URL` - optional base URL for an OpenAI-compatible provider
+- `OPENAI_API_MODE` - `responses` (default) or `chat_completions`
 - `AI_PROCESSING_LIMIT_PER_RUN` - max pending posts sent through AI per run, default `20`
 - `AI_BATCH_SIZE` - posts classified in one OpenAI request, default `5`
 - `OPENAI_BATCH_ENABLED` - use discounted asynchronous Batch API for background article imports

@@ -13,6 +13,7 @@ from tg_summariser.models import AIBatchJob, Post, PostStatus
 from tg_summariser.schemas import ProcessedPost
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
+from tg_summariser.services.openai_client import build_openai_client
 from tg_summariser.services.prefilter import LocalPrefilter
 from tg_summariser.services.product_radar import serialize_product_matches
 from tg_summariser.services.repositories import FeedbackRepository, PostRepository
@@ -29,14 +30,16 @@ class OpenAIBatchService:
 
     def __init__(self, client: AsyncOpenAI | None = None) -> None:
         """Initialize batch service with optional OpenAI client."""
-        self.client = client or (
-            AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
-        )
+        self.client = client or build_openai_client()
         self.pipeline = AIPipeline()
 
     async def submit_pending(self, session: AsyncSession, user_id: int) -> int:
         """Submit pending posts to the OpenAI Batch API if enabled."""
-        if not settings.openai_batch_enabled or not self.client:
+        if (
+            not settings.openai_batch_enabled
+            or settings.openai_api_mode != "responses"
+            or not self.client
+        ):
             return 0
 
         post_repo = PostRepository(session)
@@ -86,7 +89,11 @@ class OpenAIBatchService:
 
     async def collect_completed(self, session: AsyncSession, user_id: int) -> int:
         """Poll and retrieve completed OpenAI batch jobs, applying results to posts."""
-        if not settings.openai_batch_enabled or not self.client:
+        if (
+            not settings.openai_batch_enabled
+            or settings.openai_api_mode != "responses"
+            or not self.client
+        ):
             return 0
         result = await session.execute(
             select(AIBatchJob).where(AIBatchJob.status.in_(_ACTIVE_STATUSES))

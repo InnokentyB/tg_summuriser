@@ -1,9 +1,10 @@
 import httpx
-from openai import RateLimitError
+from openai import BadRequestError, RateLimitError
 
 from tg_summariser.config import settings
 from tg_summariser.models import PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
+from tg_summariser.services.openai_client import build_openai_client
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.repositories import ChannelRepository, PostRepository, UserRepository
 
@@ -53,6 +54,16 @@ def _quota_error() -> RateLimitError:
     )
 
 
+def _bad_request_error() -> BadRequestError:
+    request = httpx.Request("POST", "https://provider.example/v1/responses")
+    response = httpx.Response(400, request=request)
+    return BadRequestError(
+        message="Unsupported endpoint",
+        response=response,
+        body={"error": {"message": "Unsupported endpoint"}},
+    )
+
+
 async def test_ai_pipeline_skips_api_for_short_posts(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_min_text_length", 120)
     responses = FakeResponses()
@@ -63,6 +74,17 @@ async def test_ai_pipeline_skips_api_for_short_posts(monkeypatch) -> None:
 
     assert result.summary == "short ai note"
     assert responses.inputs == []
+
+
+async def test_openai_client_uses_configured_provider_base_url(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(settings, "openai_base_url", "https://provider.example/v1/")
+
+    client = build_openai_client()
+
+    assert client is not None
+    assert str(client.base_url) == "https://provider.example/v1/"
+    await client.close()
 
 
 async def test_ai_pipeline_trims_long_posts_before_api(monkeypatch) -> None:
@@ -114,6 +136,51 @@ async def test_ai_pipeline_falls_back_after_quota_exhaustion(monkeypatch) -> Non
     assert second.category == "AI & Agents"
     assert pipeline.api_disabled_reason == "insufficient_quota"
     assert len(responses.inputs) == 1
+
+
+async def test_ai_pipeline_falls_back_after_provider_bad_request(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+    monkeypatch.setattr(settings, "openai_api_mode", "responses")
+    responses = FakeResponses(error=_bad_request_error())
+    pipeline = AIPipeline()
+    pipeline.client = FakeClient(responses)
+
+    first = await pipeline.process_post("AI agents " * 20)
+    second = await pipeline.process_post("AI agents " * 20)
+
+    assert first.category == "AI & Agents"
+    assert second.category == "AI & Agents"
+    assert pipeline.api_disabled_reason == "bad_request"
+    assert len(responses.inputs) == 1
+
+
+async def test_ai_pipeline_supports_chat_completions_provider(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+    monkeypatch.setattr(settings, "openai_api_mode", "chat_completions")
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.messages = []
+
+        async def create(self, *, model: str, messages: list[dict[str, str]]):
+            self.messages.append(messages)
+            message = type("Message", (), {"content": FakeResponse.output_text})()
+            choice = type("Choice", (), {"message": message})()
+            return type("Response", (), {"choices": [choice]})()
+
+    completions = FakeCompletions()
+    pipeline = AIPipeline()
+    pipeline.client = type(
+        "ChatClient",
+        (),
+        {"chat": type("Chat", (), {"completions": completions})()},
+    )()
+
+    result = await pipeline.process_post("AI agents " * 20)
+
+    assert result.summary == "Саммари"
+    assert len(completions.messages) == 1
+    assert completions.messages[0][0]["role"] == "user"
 
 
 async def test_ai_pipeline_processes_posts_in_batches_of_five(monkeypatch) -> None:

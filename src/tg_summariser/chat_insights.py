@@ -8,9 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from openai import AsyncOpenAI
-
 from tg_summariser.config import settings
+from tg_summariser.services.openai_client import build_openai_client
 
 if TYPE_CHECKING:
     from telethon.sessions import StringSession
@@ -76,7 +75,7 @@ class ChatHistoryExporter:
 class ChatInsightAnalyzer:
     def __init__(self, chunk_chars: int = 24_000) -> None:
         self.chunk_chars = chunk_chars
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.client = build_openai_client()
 
     async def analyze(self, messages: list[ChatMessage], output_dir: Path, chat_ref: str) -> ChatInsightResult:
         """Run chunked LLM extraction of key insights from chat history."""

@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import logging
 
-from openai import AsyncOpenAI, RateLimitError
+from openai import BadRequestError, RateLimitError
 
 from tg_summariser.config import settings
 from tg_summariser.schemas import ProcessedPost, ProductMatch
+from tg_summariser.services.openai_client import build_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,7 @@ class AIPipeline:
 
     def __init__(self) -> None:
         """Initialize AI pipeline with optional OpenAI client."""
-        self.client = (
-            AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
-        )
+        self.client = build_openai_client()
         self.api_disabled_reason: str | None = None
 
     async def process_post(self, text: str) -> ProcessedPost:
@@ -64,17 +63,23 @@ class AIPipeline:
         prompt = self.build_prompt(posts)
 
         try:
-            response = await self.client.responses.create(
-                model=settings.openai_model,
-                input=prompt,
-            )
+            response_text = await self._request_text(prompt)
         except RateLimitError as exc:
             if self._is_insufficient_quota(exc):
                 self.api_disabled_reason = "insufficient_quota"
                 return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
             raise
+        except BadRequestError as exc:
+            self.api_disabled_reason = "bad_request"
+            logger.error(
+                "AI provider rejected request: mode=%s model=%s status=400 error=%s",
+                settings.openai_api_mode,
+                settings.openai_model,
+                exc.message,
+            )
+            return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
         results = self.parse_results(
-            self._extract_text(response),
+            response_text,
             posts,
             clean_posts,
             fallback_missing=False,
@@ -92,12 +97,18 @@ class AIPipeline:
                 + "\nCRITICAL CORRECTION: The previous answer used Ukrainian. Generate all user-facing "
                 "fields in Russian only. Translate the source; do not copy its language."
             )
-            retry_response = await self.client.responses.create(
-                model=settings.openai_model,
-                input=retry_prompt,
-            )
+            try:
+                retry_text = await self._request_text(retry_prompt)
+            except BadRequestError as exc:
+                logger.error(
+                    "AI provider rejected language retry: mode=%s model=%s status=400 error=%s",
+                    settings.openai_api_mode,
+                    settings.openai_model,
+                    exc.message,
+                )
+                retry_text = ""
             retry_results = self.parse_results(
-                self._extract_text(retry_response),
+                retry_text,
                 retry_posts,
                 clean_posts,
                 fallback_missing=False,
@@ -118,6 +129,20 @@ class AIPipeline:
                     else self._fallback(clean_posts[post_id])
                 )
         return results
+
+    async def _request_text(self, prompt: str) -> str:
+        if settings.openai_api_mode == "chat_completions":
+            response = await self.client.chat.completions.create(
+                model=settings.openai_model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.choices[0].message.content or ""
+
+        response = await self.client.responses.create(
+            model=settings.openai_model,
+            input=prompt,
+        )
+        return self._extract_text(response)
 
     def build_prompt(self, posts: list[tuple[int, str]]) -> str:
         """Construct prompt instructions and JSON payload for the LLM."""

@@ -68,6 +68,7 @@ async def _create_posts(db_session, count: int):
 
 async def test_batch_submission_groups_posts_and_reserves_them(db_session, monkeypatch) -> None:
     monkeypatch.setattr(settings, "openai_batch_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_mode", "responses")
     monkeypatch.setattr(settings, "ai_batch_size", 5)
     user, posts = await _create_posts(db_session, 6)
     client = FakeClient()
@@ -81,6 +82,19 @@ async def test_batch_submission_groups_posts_and_reserves_them(db_session, monke
     assert all(json.loads(line)["url"] == "/v1/responses" for line in lines)
     assert all(post.ai_batch_job_id is not None for post in posts)
     assert await PostRepository(db_session).pending_posts() == []
+
+
+async def test_batch_submission_is_disabled_for_chat_completions(db_session, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "openai_batch_enabled", True)
+    monkeypatch.setattr(settings, "openai_api_mode", "chat_completions")
+    user, posts = await _create_posts(db_session, 1)
+    client = FakeClient()
+
+    submitted = await OpenAIBatchService(client).submit_pending(db_session, user.id)
+
+    assert submitted == 0
+    assert client.batches.created == 0
+    assert posts[0].ai_batch_job_id is None
 
 
 async def test_completed_batch_applies_results(db_session, monkeypatch) -> None:
