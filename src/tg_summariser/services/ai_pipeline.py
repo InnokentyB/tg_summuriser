@@ -8,6 +8,7 @@ from openai import BadRequestError, RateLimitError
 from tg_summariser.config import settings
 from tg_summariser.schemas import ProcessedPost, ProductMatch
 from tg_summariser.services.openai_client import build_openai_client
+from tg_summariser.services.quota_alert import is_insufficient_quota_error
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ class AIPipeline:
 
     async def process_post(self, text: str) -> ProcessedPost:
         """Process a single post text and return its structured summary."""
-        return (await self.process_posts([(0, text)]))[0]
+        results = await self.process_posts([(0, text)])
+        return results.get(0, self._fallback(" ".join(text.split())))
 
     async def process_posts(self, posts: list[tuple[int, str]]) -> dict[int, ProcessedPost]:
         """Process a batch of posts through the LLM pipeline."""
@@ -53,6 +55,8 @@ class AIPipeline:
         for start in range(0, len(api_posts), max(settings.ai_batch_size, 1)):
             batch = api_posts[start : start + max(settings.ai_batch_size, 1)]
             results.update(await self._process_api_batch(batch, clean_posts))
+            if self.api_disabled_reason:
+                break
         return results
 
     async def _process_api_batch(
@@ -65,9 +69,9 @@ class AIPipeline:
         try:
             response_text = await self._request_text(prompt)
         except RateLimitError as exc:
-            if self._is_insufficient_quota(exc):
+            if is_insufficient_quota_error(exc):
                 self.api_disabled_reason = "insufficient_quota"
-                return {post_id: self._fallback(clean_posts[post_id]) for post_id, _ in posts}
+                return {}
             raise
         except BadRequestError as exc:
             self.api_disabled_reason = "bad_request"
@@ -313,12 +317,3 @@ class AIPipeline:
                 if getattr(content, "type", "") == "output_text":
                     return str(content.text)
         return "{}"
-
-    @staticmethod
-    def _is_insufficient_quota(exc: RateLimitError) -> bool:
-        body = getattr(exc, "body", None)
-        if isinstance(body, dict):
-            error = body.get("error")
-            if isinstance(error, dict):
-                return error.get("code") in {"insufficient_quota", "credit_balance_exhausted"}
-        return "insufficient_quota" in str(exc) or "credit_balance_exhausted" in str(exc)

@@ -15,6 +15,7 @@ from tg_summariser.services.ingestion import IngestionService
 from tg_summariser.services.openai_batch import OpenAIBatchService
 from tg_summariser.services.post_processor import PostProcessor
 from tg_summariser.services.product_radar import ProductRadarService
+from tg_summariser.services.quota_alert import QuotaAlertGuard, is_insufficient_quota_error
 from tg_summariser.services.repositories import UserRepository
 from tg_summariser.services.scoring import RelevanceScorer
 from tg_summariser.services.telegram_client import TelegramUserClient
@@ -26,6 +27,11 @@ logger = logging.getLogger(__name__)
 def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler:
     """Build and configure the AsyncIOScheduler with periodic digest and import jobs."""
     scheduler = AsyncIOScheduler(timezone=settings.timezone)
+    quota_alert = QuotaAlertGuard()
+
+    async def notify_quota_exhausted() -> None:
+        if settings.owner_telegram_id:
+            await quota_alert.notify_once(bot, settings.owner_telegram_id)
 
     async def import_articles(session: AsyncSession) -> int:
         article_importer = TGArticlesImportService.from_settings()
@@ -40,14 +46,27 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                 logger.warning("Scheduled article import skipped: OWNER_TELEGRAM_ID is not configured")
                 return
             user = await UserRepository(session).get_or_create(settings.owner_telegram_id)
-            batch_service = OpenAIBatchService()
-            collected = await batch_service.collect_completed(session, user.id)
-            imported = await import_articles(session)
-            if settings.openai_batch_enabled:
-                processed = await batch_service.submit_pending(session, user.id)
-            else:
-                processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
-                processed = await processor.process_pending(session, user.id)
+            try:
+                batch_service = OpenAIBatchService()
+                collected = await batch_service.collect_completed(session, user.id)
+                imported = await import_articles(session)
+                if settings.openai_batch_enabled:
+                    processed = await batch_service.submit_pending(session, user.id)
+                    quota_alert.mark_recovered()
+                else:
+                    pipeline = AIPipeline()
+                    processor = PostProcessor(pipeline, Deduplicator(), RelevanceScorer())
+                    processed = await processor.process_pending(session, user.id)
+                    if pipeline.api_disabled_reason == "insufficient_quota":
+                        await notify_quota_exhausted()
+                    else:
+                        quota_alert.mark_recovered()
+            except Exception as exc:
+                if is_insufficient_quota_error(exc):
+                    logger.warning("Scheduled article import paused: OpenAI credits exhausted")
+                    await notify_quota_exhausted()
+                    return
+                raise
             logger.info(
                 "Scheduled article import finished: imported=%s batch_collected=%s processed_or_queued=%s",
                 imported,
@@ -68,6 +87,10 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                 imported = await import_articles(session)
                 processor = PostProcessor(AIPipeline(), Deduplicator(), RelevanceScorer())
                 processed = await processor.process_pending(session, user.id)
+                if processor.ai_pipeline.api_disabled_reason == "insufficient_quota":
+                    await notify_quota_exhausted()
+                else:
+                    quota_alert.mark_recovered()
                 sent = await DigestService(bot).send_digest(session, user.id, user.telegram_id)
                 product_sent = await ProductRadarService(bot).send_review(
                     session, user.telegram_id
@@ -83,6 +106,9 @@ def build_scheduler(bot: Bot, tg_client: TelegramUserClient) -> AsyncIOScheduler
                 )
         except Exception as exc:
             logger.exception("Scheduled digest failed")
+            if is_insufficient_quota_error(exc):
+                await notify_quota_exhausted()
+                return
             if settings.owner_telegram_id:
                 await bot.send_message(
                     settings.owner_telegram_id,

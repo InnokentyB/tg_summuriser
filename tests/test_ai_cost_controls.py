@@ -138,6 +138,18 @@ async def test_ai_pipeline_falls_back_after_quota_exhaustion(monkeypatch) -> Non
     assert len(responses.inputs) == 1
 
 
+async def test_ai_pipeline_keeps_batch_posts_pending_after_quota_exhaustion(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ai_min_text_length", 1)
+    responses = FakeResponses(error=_quota_error())
+    pipeline = AIPipeline()
+    pipeline.client = FakeClient(responses)
+
+    results = await pipeline.process_posts([(1, "AI agents " * 20), (2, "AI tools " * 20)])
+
+    assert results == {}
+    assert pipeline.api_disabled_reason == "insufficient_quota"
+
+
 async def test_ai_pipeline_falls_back_after_provider_bad_request(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ai_min_text_length", 1)
     monkeypatch.setattr(settings, "openai_api_mode", "responses")
