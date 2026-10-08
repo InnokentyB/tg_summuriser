@@ -173,13 +173,7 @@ class OpenAIBatchService:
         feedback = FeedbackRepository(session)
         category_affinity = await feedback.category_affinity(user_id)
         channel_affinity = await feedback.channel_affinity(user_id)
-        existing = list(
-            (
-                await session.execute(
-                    select(Post).where(Post.status.in_([PostStatus.processed, PostStatus.hidden]))
-                )
-            ).scalars()
-        )
+        existing = await PostRepository(session).dedup_reference_posts()
         scorer = RelevanceScorer()
         deduplicator = Deduplicator()
         applied = 0

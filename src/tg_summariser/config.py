@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     )
     digest_min_importance_score: float = Field(default=0.5, alias="DIGEST_MIN_IMPORTANCE_SCORE")
     digest_min_relevance_score: float = Field(default=0.65, alias="DIGEST_MIN_RELEVANCE_SCORE")
+    dedup_window_days: int = Field(default=7, ge=1, alias="DEDUP_WINDOW_DAYS")
     timezone: str = Field(default="Europe/Lisbon", alias="TIMEZONE")
     tgarticles_database_url: str = Field(default="", alias="TGARTICLES_DATABASE_URL")
     tgarticles_import_enabled: bool = Field(default=True, alias="TGARTICLES_IMPORT_ENABLED")

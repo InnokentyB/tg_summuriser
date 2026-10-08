@@ -111,6 +111,19 @@ class PostRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def dedup_reference_posts(self) -> list[Post]:
+        """Return only recent analyzed posts that can be duplicate references."""
+        cutoff = datetime.utcnow() - timedelta(days=settings.dedup_window_days)
+        result = await self.session.execute(
+            select(Post)
+            .where(
+                Post.status.in_([PostStatus.processed, PostStatus.hidden]),
+                func.coalesce(Post.source_published_at, Post.created_at) >= cutoff,
+            )
+            .order_by(Post.created_at.desc())
+        )
+        return list(result.scalars())
+
     async def hide_stale_pending(self, max_age_days: int, channel_id: int | None = None) -> int:
         """Mark old pending posts as hidden before AI processing."""
         freshness_cutoff = datetime.utcnow() - timedelta(days=max_age_days)

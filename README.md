@@ -74,6 +74,7 @@ Optional:
 - `TELEGRAM_CHANNEL_SYNC_TIMEOUT_SECONDS` - max time spent on one Telegram channel, default `45`
 - `DIGEST_SCHEDULES`
 - `DIGEST_MAX_POST_AGE_DAYS` - maximum source-post age included in a digest, default `3`
+- `DEDUP_WINDOW_DAYS` - how many recent days are compared for duplicate news, default `7`
 - `DIGEST_MIN_IMPORTANCE_SCORE` - minimum AI importance required for a digest, default `0.5`
 - `DIGEST_MIN_RELEVANCE_SCORE` - alternative minimum personal relevance for a digest, default `0.65`
 - `CHANNEL_ONBOARDING_MAX_POST_AGE_DAYS` - AI evaluation window when adding a channel, default `7`

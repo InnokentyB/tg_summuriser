@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
-from tg_summariser.models import Post, PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.prefilter import LocalPrefilter
@@ -53,13 +51,7 @@ class PostProcessor:
 
         category_affinity = await feedback_repo.category_affinity(user_id)
         channel_affinity = await feedback_repo.channel_affinity(user_id)
-        existing_posts = list(
-            (
-                await session.execute(
-                    select(Post).where(Post.status.in_([PostStatus.processed, PostStatus.hidden]))
-                )
-            ).scalars()
-        )
+        existing_posts = await post_repo.dedup_reference_posts()
 
         decisions = {
             post.id: self.prefilter.decide(post, channel_affinity=channel_affinity)

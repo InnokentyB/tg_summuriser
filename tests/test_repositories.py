@@ -894,3 +894,39 @@ async def test_user_category_preferences_roundtrip(db_session) -> None:
         "AI tools": True,
         "Business": False,
     }
+
+
+async def test_dedup_reference_posts_excludes_old_history(db_session, monkeypatch) -> None:
+    from tg_summariser.config import settings
+
+    monkeypatch.setattr(settings, "dedup_window_days", 7)
+    channel = await ChannelRepository(db_session).upsert_channel(
+        telegram_chat_id=444,
+        title="Dedup News",
+        telegram_username="dedup_news",
+        is_private=False,
+    )
+    old_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=1,
+        raw_text="Old AI agent story",
+        normalized_text="Old AI agent story",
+        original_link="https://t.me/dedup_news/1",
+        source_published_at=datetime.utcnow() - timedelta(days=30),
+    )
+    old_post.status = PostStatus.processed
+    old_post.created_at = datetime.utcnow() - timedelta(days=30)
+    recent_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=2,
+        raw_text="Recent AI agent story",
+        normalized_text="Recent AI agent story",
+        original_link="https://t.me/dedup_news/2",
+        source_published_at=datetime.utcnow() - timedelta(days=2),
+    )
+    recent_post.status = PostStatus.hidden
+
+    references = await PostRepository(db_session).dedup_reference_posts()
+
+    assert recent_post in references
+    assert old_post not in references
