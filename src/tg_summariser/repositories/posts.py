@@ -117,7 +117,8 @@ class PostRepository:
         result = await self.session.execute(
             select(Post)
             .where(
-                Post.status.in_([PostStatus.processed, PostStatus.hidden]),
+                Post.status == PostStatus.processed,
+                Post.is_promotional.is_(False),
                 func.coalesce(Post.source_published_at, Post.created_at) >= cutoff,
             )
             .order_by(Post.created_at.desc())

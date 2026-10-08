@@ -924,9 +924,19 @@ async def test_dedup_reference_posts_excludes_old_history(db_session, monkeypatc
         original_link="https://t.me/dedup_news/2",
         source_published_at=datetime.utcnow() - timedelta(days=2),
     )
-    recent_post.status = PostStatus.hidden
+    recent_post.status = PostStatus.processed
+    hidden_post, _ = await PostRepository(db_session).create_post(
+        channel_id=channel.id,
+        telegram_message_id=3,
+        raw_text="Recent hidden AI agent story",
+        normalized_text="Recent hidden AI agent story",
+        original_link="https://t.me/dedup_news/3",
+        source_published_at=datetime.utcnow() - timedelta(days=1),
+    )
+    hidden_post.status = PostStatus.hidden
 
     references = await PostRepository(db_session).dedup_reference_posts()
 
     assert recent_post in references
     assert old_post not in references
+    assert hidden_post not in references

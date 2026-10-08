@@ -188,7 +188,8 @@ class OpenAIBatchService:
             post.relevance_score = score
             post.status = status
             post.explanation = explanation
-            existing.append(post)
+            if post.status == PostStatus.processed and not post.is_promotional:
+                existing.append(post)
             applied += 1
         return applied
 

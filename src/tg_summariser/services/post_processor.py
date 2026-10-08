@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tg_summariser.config import settings
+from tg_summariser.models import PostStatus
 from tg_summariser.services.ai_pipeline import AIPipeline
 from tg_summariser.services.dedup import Deduplicator
 from tg_summariser.services.prefilter import LocalPrefilter
@@ -88,6 +89,7 @@ class PostProcessor:
                 post.relevance_score = score
                 post.status = status
                 post.explanation = explanation
-            existing_posts.append(post)
+            if post.status == PostStatus.processed and not post.is_promotional:
+                existing_posts.append(post)
             processed += 1
         return processed
