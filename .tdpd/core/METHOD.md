@@ -1,0 +1,56 @@
+# Test-Driven Product Development
+
+Test-Driven Product Development (TDPD) is an original method by Innokenty Bodrov.
+
+## Canonical pipeline
+
+`Business problem → Approved product surface → Functional + quality specification → Architecture/risk plan → Specification Lock → User scenarios → E2E/quality tests → Agent implementation → Acceptance (UAT)`
+
+1. Establish the actor, problem, desired outcome, and success signal.
+2. Specify observable functional behavior and measurable quality attributes; plan architecture from those drivers, challenge it through security/failure review, and approve `LOCK-###` before final scenarios.
+3. Describe real sequences of user actions and system responses, including applicable quality, hostile, failure, and recovery cases.
+4. Convert every practical scenario into executable e2e and applicable QAR/risk/fitness tests before production implementation.
+5. Let the implementation agent work within the approved architecture and autonomy boundary, after execution readiness is proven, until tests pass and each build has an honest `TRUN-###`.
+6. Have a responsible human decide through UAT whether the result solves the original problem.
+
+## Non-negotiable principles
+
+- Reconcile contradictory sources before development.
+- Treat an untestable scenario as a wish until it has an observable condition or is assigned to manual review.
+- Treat an unspecified product surface as a blocking product decision. Never substitute a CLI or engineering interface for the intended experience.
+- Exercise executable scenarios through the approved user surface; supporting API or CLI checks do not replace surface-level acceptance.
+- Prove tests fail because behavior is absent before implementing it.
+- Do not weaken tests merely to create green.
+- Keep human judgment at architecture/risk input and UAT output instead of requiring line-by-line review of every agent rewrite.
+- Do not finalize scenarios or enter Red until goal, functional, quality, architecture, risk, surface, and project readiness are locked.
+- Report every required test case as passed, failed, errored, skipped, or not run; absence and infrastructure failure are not green.
+- Preserve traceability from business value to acceptance evidence.
+- Bind source-heavy delivery to a versioned Context Baseline and invalidate affected downstream artifacts when material evidence or decisions change.
+- Scale Problem, Opportunity, and Input rigor using a Reliance & Harm preflight; require direct evidence and additional guardrails only when user dependency and consequences justify them.
+- Require an approved Autonomy Contract before an agent may perform external or production side effects. Keep permissions least-privileged, actions attributable, blast radius bounded, and rollback owned.
+- Prove Execution Readiness before implementation: the sandbox, tools, checks, environments, observability, stop conditions, and recovery path must work rather than merely exist on paper.
+- Convert material UAT rejects, rollbacks, and escaped defects into Regression Memory: a scenario/test, a human-approved versioned rule, or an explicit manual-check decision.
+- Measure accepted outcomes, human orchestration cost, UAT acceptance, rollback, and escaped defects instead of rewarding code volume or run duration alone.
+- Never claim product value solely because automated tests pass.
+
+## Evidence precondition
+
+Apply [CONTEXT.md](CONTEXT.md) before committing the specification. TDPD does not treat input material as self-consistent: inventory sources, extract source-linked context, expose findings, record authorized decisions, freeze a Context Baseline, and preserve provenance through requirements, scenarios, tests, implementation, and UAT. A baseline identifies the evidence version being tested; it does not certify that evidence as true.
+
+Apply [SPECIFICATION_ARCHITECTURE_ASSURANCE.md](SPECIFICATION_ARCHITECTURE_ASSURANCE.md) before final scenario drafting. A current approved Specification Lock proves that quality requirements, architecture, security, failure behavior, project boundaries, and human-owned tradeoffs are explicit enough that implementation need not invent them.
+
+## Opportunity precondition
+
+Apply [OPPORTUNITY.md](OPPORTUNITY.md) after framing the problem and before committing the specification. Use the cheapest credible experiment to test load-bearing assumptions. TDPD ensures disciplined delivery of a chosen product bet; it does not make an unvalidated bet valuable.
+
+## Business and market precondition
+
+Apply [BUSINESS_GTM.md](BUSINESS_GTM.md) before committing commercial, billing, entitlement, onboarding, or channel-dependent requirements. Validate the buyer/value exchange and bound economic uncertainty before delivery; validate the go-to-market path before launch.
+
+## Product lifecycle extension
+
+Apply [OUTCOMES.md](OUTCOMES.md) to define measurement before delivery and to govern launch and learning after UAT. Preserve the TDPD boundary: UAT is the human acceptance of delivered behavior; live outcome evidence determines whether to iterate, scale, hold, roll back, or sunset.
+
+## Honest limits
+
+Tone, perceived convenience, visual taste, and strategic value may require human judgment. Legacy products may need a narrow e2e adoption slice. When no practical executable boundary exists, label the work as a specification or UAT plan rather than completed TDPD.

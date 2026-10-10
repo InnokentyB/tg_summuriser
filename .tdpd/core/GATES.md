@@ -1,0 +1,81 @@
+# Delivery Gates
+
+Gates are owned by independent layers:
+
+- Product & Business: Context, Problem, Opportunity, Business.
+- Design & Requirements: Input.
+- Implementation & Delivery: Red, Green, Output/UAT.
+- Launch & Operations: GTM, Launch, Outcome.
+
+The full workflow composes them in that order. A standalone layer evaluates only its owned gates against its entry contract.
+
+## Context gate
+
+Require a source map, atomic context pack, review findings, decision log, current `CB-###` Context Baseline, and traceability matrix proportionate to the task. Every factual statement has a readable locator or is marked `NO SOURCE`; material contradictions and gaps are unresolved visibly or closed by an authorized `DL-###` decision. Every material decision has a current `DVE-###` separating supporting, excluding, contradicting, and uncertain evidence. Context readiness is Ready or Partially ready with no critical blocker for the next gate. No artifact required by the next gate may remain `STALE`.
+
+For agentic or cross-session work, also require a role-bounded `CTX-###` Context Package and observable activation acknowledgement. File presence alone does not prove that an agent loaded the method, current decisions, or required sources.
+
+## Problem gate
+
+Require an actor, real job or pain, current workaround, desired outcome, and observable success signal. Record a proportionate `RH-###` Reliance & Harm preflight covering dependency, practical ability to exit, consequence severity and duration, reversibility, and support/recovery. Distinguish the expressed request from the underlying need. If value or the risk classification is unclear, run discovery or a cheap experiment before building.
+
+## Opportunity gate
+
+Require a source-grounded opportunity, alternatives map, ranked assumption register, proportionate experiments with predeclared pass/fail/inconclusive rules, preserved observations, and a human `OPP-DEC-###` decision. For `MATERIAL` or `HIGH` reliance/harm, require direct contextual evidence for load-bearing user assumptions, explicit edge/excluded-user coverage, immediate and delayed consequence analysis, and guardrail signals. Proceeding work has an investment boundary, residual uncertainty, and kill criteria. Stated interest alone does not establish behavioral demand.
+
+## Business gate
+
+Require explicit user, buyer, approver, and operator roles; a source-grounded value exchange; behavioral willingness-to-pay or budget evidence; pricing/billing integrity requirements; ranged unit economics including labor, support, and capacity; and a human `COM-DEC-###` with acquisition/delivery cost boundaries and kill criteria.
+
+## Input gate
+
+Require all three readiness checks:
+
+- **Experience readiness:** an approved `SURF-###` product surface decision, interface contract and inventory, primary journeys, navigation, feedback states, accessibility/responsive expectations, and manual UAT criteria. For `MATERIAL` or `HIGH` reliance/harm, include applicable opt-out, consent/comprehension, cancellation, recovery, support, and escalation paths plus edge-user scenarios.
+- **Requirements readiness:** a current Context Baseline, reconciled evidence, deterministic behavior and quality attributes, testable acceptance criteria, explicit non-goals, and traceability from every material rule to a source or authorized decision and acceptance scenario. A previous Green cannot satisfy this check after its baseline changes until impact is reviewed.
+- **Specification Lock:** a current approved `LOCK-###` proves goal, functional, quality, architecture, risk, surface, and project readiness. Before approval, scenarios remain exploratory drafts and Red is forbidden.
+- **Quality-attribute readiness:** every material `QAR-###` defines its operating/workload conditions, measurable budget, overload/failure/recovery behavior, and pre-release or production verification owner.
+- **Evidence pooling readiness:** material role-local claims are published in `EVD-###`; relevant dissent, unheard roles, missing sources, and premature consensus are resolved or explicitly escalated.
+- **Decision-evidence readiness:** material `DVE-###` records cover load-bearing selection criteria, retain opposing evidence, and have independent review proportionate to reliance, harm, and reversibility.
+- **Multimodal readiness when applicable:** `MME-###` records preserve native artifacts, locators, transformation provenance, untrusted-content boundaries, and native-modality acceptance evidence.
+- **Spec Fidelity:** `FID-###` reviews completeness, consistency, unambiguity, and verifiability. Scores are diagnostic; a critical gap blocks Input regardless of an average.
+- **Engineering readiness:** approved `ARCH-###`, relevant `ADR-###`, `RISK-###`, architecture fitness functions, and `PROJ-###` project organization covering stack, module boundaries, commands, environments, security/data constraints, CI/deployment, observability, compatibility, failure/recovery, and rollback.
+- **Autonomy readiness when applicable:** an approved `AUT-###` Autonomy Contract covering agent identity, allowed and forbidden actions, least-privilege and time-bounded access, blast radius, human approval boundaries, stop signals, rollback, and recovery ownership. Without it, agent execution is limited to an isolated environment with no external or production side effects.
+
+An unspecified product surface blocks the gate. Do not silently choose a CLI, API, generated file, or test harness as the product interface. Acceptance scenarios and E2E tests must exercise the approved user surface; record unresolved ambiguity as a finding, not a silent choice.
+
+## Red gate
+
+Require a current `LOCK-###` and executable user scenarios that fail for the intended missing behavior. Infrastructure, fixture, selector, credential, or environment failures do not count. Include applicable QAR, architecture-fitness, security, failure, recovery, and native-modality scenarios. Identify synthesis, oracle, verification, merge, and release authorities in `VER-###`; the actor that synthesizes or weakens an oracle cannot approve its own release from that evidence alone.
+
+## Execution Readiness preflight (Red → implementation)
+
+Before an agent begins implementation, require an `ER-###` record proving that the approved sandbox, tool/API/CLI/MCP access, credentials policy, test fixtures, test/staging environment, observability, stop signals, retry/idempotency behavior, and rollback path work. Exercise a safe failure or recovery path where practical. This preflight does not add a top-level gate or prove product correctness; it controls whether autonomous implementation may start.
+
+## Green gate
+
+Require target e2e tests and proportionate broader checks to pass. Every build has a `TRUN-###` recording required suites and individual pass/fail/error/skip outcomes, diagnostics, environment, durations, linked scenarios/rules/QARs/risks, failure disposition, and retest lineage. Counts reconcile and no required test is hidden by summary. Separate completion, quality eligibility, verification, and acceptance. Clear authorization, verification-independence, architecture-fitness, security, data-integrity, migration, payment, destructive-operation, recovery, and rollback vetoes.
+
+## Output gate
+
+Require human UAT against the original problem in realistic use. Without this, report **engineering complete, awaiting UAT**. Every material rejection, accepted-with-follow-up gap, rollback, or escaped defect must link to a `REG-###` Regression Memory decision: add or update a scenario/test, adopt a human-approved versioned rule, or retain an explicitly owned manual check.
+
+## GTM gate
+
+Require an explicit initial segment, positioning, offer, channel, observable sales/decision stages, contracting/billing readiness when applicable, onboarding to a defined activation event, support ownership, measurement from reach through activation, capacity boundaries, and pause/rollback/kill triggers.
+
+## Launch gate
+
+Require accepted UAT, validated decision-critical instrumentation, bounded audience/exposure, operational and support owners, monitoring, communications, applicable privacy/legal/billing/migration readiness, rollback triggers and path, and a scheduled outcome review. A responsible human can locate governing specifications, operate the system, diagnose representative failures, and execute rollback; green but opaque delivery is an operational risk.
+
+## Outcome gate
+
+Require production observations compared with a frozen measurement contract, visible data-quality and attribution limitations, guardrail and operational evidence, and a human `LIFE-DEC-###` decision to Iterate, Scale, Hold, Roll back, or Sunset. Return learning to the earliest affected gate.
+
+## Traceability
+
+Use stable IDs for non-trivial work:
+
+`CB/CTX → S/MME → F/C/G/A/R/EVD/COM → DL/DVE → PROB/RH → OPP/ASM/EXP/OBS/OPP-DEC → BIZ/PRICE-EXP/COM-DEC → MEAS → SURF/UI → RULE/QAR → ARCH/ADR/RISK/FIT → PROJ/AUT/FID/LOCK → SCN → E2E/MANUAL → ER → WORK/HANDOFF/RUN/TRUN/VER → UAT/REG → GTM → LAUNCH → OUT-OBS/OUT-REV → LIFE-DEC`
+
+Every material rule maps to a scenario or explicit manual check. Every test maps to user value or a necessary safety constraint.

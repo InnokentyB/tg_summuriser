@@ -1,0 +1,21 @@
+# Opportunity Brief
+
+- **ID:** OPP-001
+- **Target user:**
+- **Buyer/approver:**
+- **Job/problem:**
+- **Trigger, frequency, severity, urgency:**
+- **Source evidence:** S001 / F001 / NO SOURCE
+- **Current workaround and why it persists:**
+- **Desired behavior change:**
+- **User outcome:**
+- **Expected business outcome:**
+- **Causal mechanism:**
+- **Segment reachability:**
+- **Why now:**
+- **Constraints:**
+- **Reliance & Harm assessment:** RH-001
+- **Direct contextual evidence and missing edge users:**
+- **Immediate / delayed consequences and guardrails:**
+- **Explicit non-goals:**
+- **Decision this brief supports:**
